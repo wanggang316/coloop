@@ -1,0 +1,22 @@
+# systemd unit for the-loop (Linux).
+# Install:
+#   sudo cp dist/the-loop-linux-amd64 /usr/local/bin/the-loop
+#   sudo mkdir -p /etc/the-loop && sudo cp config.example.yaml /etc/the-loop/config.yaml
+#   sudo cp deploy/the-loop.service /etc/systemd/system/the-loop.service
+#   sudo systemctl daemon-reload && sudo systemctl enable --now the-loop
+#   journalctl -u the-loop -f
+
+[Unit]
+Description=the-loop scheduled task daemon
+After=network.target
+
+[Service]
+Type=simple
+ExecStart=/usr/local/bin/the-loop --config /etc/the-loop/config.yaml serve
+Restart=always
+RestartSec=3
+# Optional hardening:
+NoNewPrivileges=true
+
+[Install]
+WantedBy=multi-user.target

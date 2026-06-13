@@ -1,0 +1,55 @@
+# the-loop configuration — copy to ~/.the-loop/config.yaml and edit.
+
+# HTTP listen address for the Web UI + JSON API.
+# Default is loopback-only (127.0.0.1:8765). Binding a non-loopback address
+# exposes UNAUTHENTICATED task execution to the network, so only do that
+# behind your own auth/reverse-proxy.
+listen: "127.0.0.1:8765"
+
+# Default shell interpreter for `type: shell` tasks. This must be just the
+# interpreter PATH (e.g. /bin/sh or /bin/bash) — the-loop runs the command as
+# `<shell> -c "<command>"`. Do NOT append "-c" here.
+shell: /bin/sh
+
+# Where run records and logs live. Defaults to the directory of this config.
+# Layout: <data_dir>/runs/<task>/<id>/{meta.json,output.log}
+data_dir: ~/.the-loop
+
+# Optional alert channels. Omit a block to disable that channel.
+notifiers:
+  feishu:
+    webhook: ""        # custom bot webhook URL
+    secret: ""         # webhook signing secret (optional)
+    # cli_path: ""     # alternatively, path to a feishu CLI binary
+  telegram:
+    bot_token: ""
+    chat_id: ""
+    # api_base: "https://api.telegram.org"   # override (e.g. for testing)
+
+tasks:
+  # A scheduled local script.
+  - name: db-backup
+    type: shell
+    cron: "0 3 * * *"            # standard 5-field cron; empty = manual only
+    working_dir: ~/projects/api  # cwd the command runs in
+    command: ./scripts/backup.sh
+    env:
+      ENV: prod
+    timeout: 1h                  # parsed durations like 30s/10m/1h; default 1h
+    alert: on_failure            # on_failure | on_success | always | never
+
+  # Invoke an agent via a command template. {{.Prompt}}, {{.TaskName}},
+  # {{.WorkingDir}} are rendered; $PROMPT and $TASK_NAME are also exported.
+  - name: agent-triage
+    type: agent
+    cron: "0 */2 * * *"
+    working_dir: ~/projects/web
+    cmd_tmpl: 'claude -p "{{.Prompt}}"'
+    prompt: Inspect today's alert logs and summarize action items.
+    alert: always
+
+  # A manual-only task (no cron); trigger from the UI or `the-loop run hello`.
+  - name: hello
+    type: shell
+    command: echo "hello from the-loop"
+    alert: never
