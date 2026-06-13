@@ -1,0 +1,163 @@
+// Package config loads, validates and watches the-loop's config.yaml,
+// turning it into a *model.Config the rest of the daemon builds on.
+package config
+
+import (
+	"errors"
+	"fmt"
+	"os"
+	"path/filepath"
+	"strings"
+	"time"
+
+	"github.com/robfig/cron/v3"
+	"gopkg.in/yaml.v3"
+
+	"github.com/wanggang316/the-loop/internal/model"
+)
+
+// Load reads the YAML config at path, applies defaults and expands "~/" in
+// path-like fields, then validates the result.
+func Load(path string) (*model.Config, error) {
+	data, err := os.ReadFile(path)
+	if err != nil {
+		return nil, fmt.Errorf("read config %q: %w", path, err)
+	}
+
+	var cfg model.Config
+	if err := yaml.Unmarshal(data, &cfg); err != nil {
+		return nil, fmt.Errorf("parse config %q: %w", path, err)
+	}
+
+	applyDefaults(&cfg, path)
+
+	if err := Validate(&cfg); err != nil {
+		return nil, err
+	}
+	return &cfg, nil
+}
+
+// applyDefaults fills in implicit values and normalises path-like fields.
+func applyDefaults(cfg *model.Config, path string) {
+	if cfg.Listen == "" {
+		// Default to loopback only: the API is unauthenticated, so a
+		// host-less ":8765" (all interfaces) must not be the default.
+		cfg.Listen = "127.0.0.1:8765"
+	}
+	if cfg.Shell == "" {
+		if sh := os.Getenv("SHELL"); sh != "" {
+			cfg.Shell = sh
+		} else {
+			cfg.Shell = "/bin/sh"
+		}
+	}
+
+	if cfg.DataDir == "" {
+		if abs, err := filepath.Abs(path); err == nil {
+			cfg.DataDir = filepath.Dir(abs)
+		} else {
+			cfg.DataDir = filepath.Dir(path)
+		}
+	}
+	cfg.DataDir = expandHome(cfg.DataDir)
+
+	for i := range cfg.Tasks {
+		t := &cfg.Tasks[i]
+		t.WorkingDir = expandHome(t.WorkingDir)
+		if t.Alert == "" {
+			t.Alert = model.AlertOnFailure
+		}
+		if t.Timeout == 0 {
+			t.Timeout = model.Duration(time.Hour)
+		}
+	}
+
+	if cfg.Notifiers.Feishu != nil {
+		cfg.Notifiers.Feishu.CLIPath = expandHome(cfg.Notifiers.Feishu.CLIPath)
+	}
+}
+
+// expandHome rewrites a bare "~" or a leading "~/" to the current user's home
+// directory. Other forms are returned unchanged.
+func expandHome(p string) string {
+	if p != "~" && !strings.HasPrefix(p, "~/") {
+		return p
+	}
+	home, err := os.UserHomeDir()
+	if err != nil {
+		return p
+	}
+	if p == "~" {
+		return home
+	}
+	return filepath.Join(home, p[2:])
+}
+
+// Validate checks structural invariants of a fully-defaulted config and
+// returns a single aggregated error describing every problem found.
+func Validate(cfg *model.Config) error {
+	var errs []error
+
+	seen := make(map[string]struct{}, len(cfg.Tasks))
+	for i := range cfg.Tasks {
+		t := &cfg.Tasks[i]
+
+		label := t.Name
+		if label == "" {
+			label = fmt.Sprintf("task[%d]", i)
+		}
+
+		if strings.TrimSpace(t.Name) == "" {
+			errs = append(errs, fmt.Errorf("%s: name is required", label))
+		} else if !safeTaskName(t.Name) {
+			// The store uses the name as a path segment under <dataDir>/runs;
+			// reject anything that could escape it.
+			errs = append(errs, fmt.Errorf("task %q: name must be a single path segment (no %q, %q or %q)", t.Name, "/", `\`, ".."))
+		} else if _, dup := seen[t.Name]; dup {
+			errs = append(errs, fmt.Errorf("task %q: duplicate name", t.Name))
+		} else {
+			seen[t.Name] = struct{}{}
+		}
+
+		switch t.Type {
+		case model.TaskShell:
+			if t.Command == "" {
+				errs = append(errs, fmt.Errorf("task %q: shell task requires command", label))
+			}
+		case model.TaskAgent:
+			if t.CmdTmpl == "" {
+				errs = append(errs, fmt.Errorf("task %q: agent task requires cmd_tmpl", label))
+			}
+		case "":
+			errs = append(errs, fmt.Errorf("task %q: type is required (shell or agent)", label))
+		default:
+			errs = append(errs, fmt.Errorf("task %q: invalid type %q (want shell or agent)", label, t.Type))
+		}
+
+		if t.Cron != "" {
+			if _, err := cron.ParseStandard(t.Cron); err != nil {
+				errs = append(errs, fmt.Errorf("task %q: invalid cron %q: %w", label, t.Cron, err))
+			}
+		}
+
+		switch t.Alert {
+		case "", model.AlertOnFailure, model.AlertOnSuccess, model.AlertAlways, model.AlertNever:
+		default:
+			errs = append(errs, fmt.Errorf("task %q: invalid alert %q (want on_failure, on_success, always or never)", label, t.Alert))
+		}
+	}
+
+	return errors.Join(errs...)
+}
+
+// safeTaskName reports whether name is a single, path-safe segment that cannot
+// escape <dataDir>/runs when used as a directory component by the store.
+func safeTaskName(name string) bool {
+	if name == "." || name == ".." || strings.Contains(name, "..") {
+		return false
+	}
+	if strings.ContainsAny(name, `/\`) {
+		return false
+	}
+	return name == filepath.Base(name)
+}
