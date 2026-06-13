@@ -1,0 +1,29 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>the-loop</title>
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+  <header class="topbar">
+    <div class="brand">
+      <span class="logo">◴</span>
+      <span class="title">the-loop</span>
+    </div>
+    <nav id="crumbs" class="crumbs"><!-- breadcrumb trail rendered by app.js --></nav>
+    <div class="actions">
+      <button id="reloadBtn" class="btn ghost" title="Reload config from disk">reload</button>
+      <button id="refreshBtn" class="btn ghost" title="Refresh now">refresh</button>
+      <span id="poll" class="poll" title="Live polling indicator"></span>
+    </div>
+  </header>
+
+  <main id="view" class="view"><!-- active screen rendered by app.js --></main>
+
+  <div id="toast" class="toast" hidden></div>
+
+  <script src="app.js"></script>
+</body>
+</html>
