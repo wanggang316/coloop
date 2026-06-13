@@ -1,0 +1,11 @@
+# build output
+/bin/
+/dist/
+/the-loop
+
+# local runtime data & logs
+/.the-loop/
+*.log
+
+# editor / OS cruft
+.DS_Store
