@@ -72,6 +72,7 @@ func runServe(cfgPath string) {
 
 	disp := notify.NewDispatcher(cfg.Notifiers)
 	eng := engine.New(cfg, st, disp, executor.NewShell(cfg.Shell), executor.NewAgent(cfg.Shell))
+	eng.SetConfigPath(cfgPath) // enable task create/update/delete via the API
 	eng.Start()
 
 	reload := func() error {

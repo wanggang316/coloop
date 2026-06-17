@@ -161,3 +161,37 @@ func safeTaskName(name string) bool {
 	}
 	return name == filepath.Base(name)
 }
+
+// ApplyDefaults fills implicit values and normalises path-like fields. It is
+// exported for callers that assemble a config in memory (e.g. the engine's task
+// editor) and need the same normalisation Load applies before validation.
+func ApplyDefaults(cfg *model.Config, path string) { applyDefaults(cfg, path) }
+
+// Save writes cfg back to path as YAML, atomically (temp file in the same
+// directory, then rename). It serialises via Marshal, so hand-written comments
+// and original field ordering are NOT preserved: once tasks are edited through
+// the API the daemon owns the file's formatting. The temp file is created with
+// 0600 because the config may carry notifier secrets.
+func Save(path string, cfg *model.Config) error {
+	data, err := yaml.Marshal(cfg)
+	if err != nil {
+		return fmt.Errorf("marshal config: %w", err)
+	}
+	tmp, err := os.CreateTemp(filepath.Dir(path), ".config-*.yaml.tmp")
+	if err != nil {
+		return fmt.Errorf("create temp config: %w", err)
+	}
+	tmpName := tmp.Name()
+	defer os.Remove(tmpName) // no-op once the rename below succeeds
+	if _, err := tmp.Write(data); err != nil {
+		tmp.Close()
+		return fmt.Errorf("write temp config: %w", err)
+	}
+	if err := tmp.Close(); err != nil {
+		return fmt.Errorf("close temp config: %w", err)
+	}
+	if err := os.Rename(tmpName, path); err != nil {
+		return fmt.Errorf("replace config: %w", err)
+	}
+	return nil
+}

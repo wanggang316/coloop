@@ -43,8 +43,9 @@ type Engine struct {
 	shellExec executor.Executor
 	agentExec executor.Executor
 
-	cfgMu sync.RWMutex
-	cfg   *model.Config
+	cfgMu   sync.RWMutex
+	cfg     *model.Config
+	cfgPath string // config file path; enables persisting task edits (see tasks.go)
 
 	cron    *cron.Cron
 	entries map[string]cron.EntryID // task name -> scheduled cron entry

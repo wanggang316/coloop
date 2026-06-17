@@ -26,7 +26,10 @@ func New(e *engine.Engine, ui fs.FS, reload func() error) http.Handler {
 
 	mux.HandleFunc("GET /healthz", s.healthz)
 	mux.HandleFunc("GET /api/tasks", s.listTasks)
+	mux.HandleFunc("POST /api/tasks", s.createTask)
 	mux.HandleFunc("GET /api/tasks/{name}", s.getTask)
+	mux.HandleFunc("PUT /api/tasks/{name}", s.updateTask)
+	mux.HandleFunc("DELETE /api/tasks/{name}", s.deleteTask)
 	mux.HandleFunc("POST /api/tasks/{name}/run", s.runTask)
 	mux.HandleFunc("GET /api/tasks/{name}/runs", s.listRuns)
 	mux.HandleFunc("GET /api/tasks/{name}/runs/{id}", s.getRun)
@@ -73,6 +76,40 @@ func (s *server) runTask(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	writeJSON(w, http.StatusAccepted, model.TriggerResponse{RunID: id})
+}
+
+func (s *server) createTask(w http.ResponseWriter, r *http.Request) {
+	var t model.Task
+	if !decodeJSON(w, r, &t) {
+		return
+	}
+	created, err := s.eng.CreateTask(t)
+	if err != nil {
+		writeTaskErr(w, err)
+		return
+	}
+	writeJSON(w, http.StatusCreated, created)
+}
+
+func (s *server) updateTask(w http.ResponseWriter, r *http.Request) {
+	var t model.Task
+	if !decodeJSON(w, r, &t) {
+		return
+	}
+	updated, err := s.eng.UpdateTask(r.PathValue("name"), t)
+	if err != nil {
+		writeTaskErr(w, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, updated)
+}
+
+func (s *server) deleteTask(w http.ResponseWriter, r *http.Request) {
+	if err := s.eng.DeleteTask(r.PathValue("name")); err != nil {
+		writeTaskErr(w, err)
+		return
+	}
+	w.WriteHeader(http.StatusNoContent)
 }
 
 func (s *server) listRuns(w http.ResponseWriter, r *http.Request) {
@@ -251,6 +288,34 @@ func writeEngineErr(w http.ResponseWriter, err error) {
 	}
 	log.Printf("api: internal error: %v", err)
 	writeErr(w, http.StatusInternalServerError, "internal error")
+}
+
+// decodeJSON decodes the request body into v, writing a 400 and returning false
+// on failure so the caller can simply `return`.
+func decodeJSON(w http.ResponseWriter, r *http.Request, v any) bool {
+	if err := json.NewDecoder(r.Body).Decode(v); err != nil {
+		writeErr(w, http.StatusBadRequest, "invalid JSON: "+err.Error())
+		return false
+	}
+	return true
+}
+
+// writeTaskErr maps task-editing errors to HTTP status codes: not found -> 404,
+// duplicate -> 409, validation -> 400, no config path -> 403, else 500.
+func writeTaskErr(w http.ResponseWriter, err error) {
+	switch {
+	case errors.Is(err, engine.ErrNotFound):
+		writeErr(w, http.StatusNotFound, "not found")
+	case errors.Is(err, engine.ErrDuplicate):
+		writeErr(w, http.StatusConflict, err.Error())
+	case errors.Is(err, engine.ErrInvalid):
+		writeErr(w, http.StatusBadRequest, err.Error())
+	case errors.Is(err, engine.ErrReadOnly):
+		writeErr(w, http.StatusForbidden, err.Error())
+	default:
+		log.Printf("api: task edit error: %v", err)
+		writeErr(w, http.StatusInternalServerError, "internal error")
+	}
 }
 
 // contentType is a minimal fallback MIME map for the SPA's known asset types,

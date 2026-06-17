@@ -122,10 +122,18 @@ async function api(path, opts) {
 const Tasks = {
   list: () => api('/api/tasks'),
   detail: (name) => api('/api/tasks/' + encodeURIComponent(name)),
+  create: (t) => api('/api/tasks', jsonOpts('POST', t)),
+  update: (name, t) => api('/api/tasks/' + encodeURIComponent(name), jsonOpts('PUT', t)),
+  remove: (name) => api('/api/tasks/' + encodeURIComponent(name), { method: 'DELETE' }),
   run: (name) => api('/api/tasks/' + encodeURIComponent(name) + '/run', { method: 'POST' }),
   runLog: (name, id) => api(`/api/tasks/${encodeURIComponent(name)}/runs/${encodeURIComponent(id)}/log`),
   reload: () => api('/api/reload', { method: 'POST' }),
 };
+
+// jsonOpts builds fetch options for a JSON request body.
+function jsonOpts(method, body) {
+  return { method, headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) };
+}
 
 // ---------- transient toast ----------
 
@@ -137,6 +145,147 @@ function toast(msg, kind = 'ok') {
   t.hidden = false;
   clearTimeout(toastTimer);
   toastTimer = setTimeout(() => { t.hidden = true; }, 3200);
+}
+
+// ---------- task editor (create / edit / delete) ----------
+
+// modal mounts node in a dismissable overlay (click-outside or Esc) and returns
+// a close() handle.
+function modal(node) {
+  const overlay = el('div', { class: 'modal-overlay' }, node);
+  function onKey(ev) { if (ev.key === 'Escape') close(); }
+  function close() { document.removeEventListener('keydown', onKey); overlay.remove(); }
+  overlay.addEventListener('click', (ev) => { if (ev.target === overlay) close(); });
+  document.addEventListener('keydown', onKey);
+  document.body.append(overlay);
+  return { close };
+}
+
+// confirmModal asks a yes/no question. It deliberately avoids window.confirm,
+// which blocks the event loop. onYes may be async and runs with the button busy.
+function confirmModal(title, body, confirmLabel, onYes) {
+  const yes = el('button', { type: 'button', class: 'btn primary danger' }, confirmLabel);
+  const m = modal(el('div', { class: 'modal-card sm' },
+    el('h2', null, title),
+    el('p', { class: 'modal-body' }, body),
+    el('div', { class: 'form-actions' },
+      el('button', { type: 'button', class: 'btn', onclick: () => m.close() }, 'cancel'),
+      yes)));
+  yes.addEventListener('click', async () => {
+    yes.disabled = true;
+    try { await onYes(); m.close(); }
+    catch (e) { toast(e.message, 'err'); yes.disabled = false; }
+  });
+}
+
+// formToTask reads the editor's field nodes into a Task payload for the API.
+function formToTask(f) {
+  const type = f.type.value;
+  const t = {
+    name: f.name.value.trim(),
+    type,
+    cron: f.cron.value.trim(),
+    working_dir: f.working_dir.value.trim(),
+    alert: f.alert.value,
+    enabled: f.enabled.checked,
+  };
+  if (type === 'agent') {
+    t.cmd_tmpl = f.cmd_tmpl.value.trim();
+    t.prompt = f.prompt.value;
+  } else {
+    t.command = f.command.value;
+  }
+  const to = f.timeout.value.trim();
+  if (to) t.timeout = to;
+  const env = {};
+  for (const line of f.env.value.split('\n')) {
+    const s = line.trim();
+    if (!s) continue;
+    const eq = s.indexOf('=');
+    if (eq > 0) env[s.slice(0, eq).trim()] = s.slice(eq + 1);
+  }
+  if (Object.keys(env).length) t.env = env;
+  return t;
+}
+
+// openTaskForm shows the create form (existing omitted) or an edit form.
+// onSaved(newName, oldName) runs after a successful save (oldName is null on create).
+function openTaskForm(existing, onSaved) {
+  const editing = !!existing;
+  const t = existing || { type: 'shell', enabled: true };
+  const f = {};
+
+  const field = (label, node, hint) => el('label', { class: 'field' },
+    el('span', { class: 'field-label' }, label),
+    node,
+    hint ? el('span', { class: 'field-hint' }, hint) : null);
+
+  f.name = el('input', { type: 'text', value: t.name || '', placeholder: 'my-task', autocomplete: 'off', spellcheck: 'false' });
+  f.type = el('select', null,
+    el('option', { value: 'shell', selected: t.type !== 'agent' }, 'shell'),
+    el('option', { value: 'agent', selected: t.type === 'agent' }, 'agent'));
+  f.cron = el('input', { type: 'text', value: t.cron || '', placeholder: '0 9 * * *  (empty = manual only)', autocomplete: 'off', spellcheck: 'false' });
+  f.working_dir = el('input', { type: 'text', value: t.working_dir || '', placeholder: '~/project', autocomplete: 'off', spellcheck: 'false' });
+  f.command = el('textarea', { rows: '2', placeholder: './run.sh', spellcheck: 'false' }, t.command || '');
+  f.prompt = el('textarea', { rows: '2', placeholder: 'Inspect logs and summarise.' }, t.prompt || '');
+  f.cmd_tmpl = el('input', { type: 'text', value: t.cmd_tmpl || '', placeholder: 'claude -p "{{.Prompt}}"', autocomplete: 'off', spellcheck: 'false' });
+  f.timeout = el('input', { type: 'text', value: t.timeout && t.timeout !== '0s' ? t.timeout : '', placeholder: '1h (default)', autocomplete: 'off', spellcheck: 'false' });
+  f.alert = el('select', null,
+    ...['on_failure', 'on_success', 'always', 'never'].map(
+      (a) => el('option', { value: a, selected: (t.alert || 'on_failure') === a }, a)));
+  f.enabled = el('input', { type: 'checkbox', checked: t.enabled !== false });
+  f.env = el('textarea', { rows: '2', placeholder: 'ENV=prod', spellcheck: 'false' },
+    t.env ? Object.entries(t.env).map(([k, v]) => `${k}=${v}`).join('\n') : '');
+
+  const shellRow = field('command', f.command, 'run via the configured shell');
+  const promptRow = field('prompt', f.prompt);
+  const tmplRow = field('command template', f.cmd_tmpl, '{{.Prompt}} {{.TaskName}} {{.WorkingDir}} are rendered');
+
+  function syncType() {
+    const agent = f.type.value === 'agent';
+    shellRow.hidden = agent;
+    promptRow.hidden = !agent;
+    tmplRow.hidden = !agent;
+  }
+  f.type.addEventListener('change', syncType);
+
+  const err = el('div', { class: 'form-err', hidden: true });
+  const save = el('button', { type: 'submit', class: 'btn primary' }, editing ? 'save' : 'create');
+
+  async function onSubmit(ev) {
+    ev.preventDefault();
+    const task = formToTask(f);
+    if (!task.name) { err.textContent = 'name is required'; err.hidden = false; return; }
+    save.disabled = true;
+    err.hidden = true;
+    try {
+      const saved = editing ? await Tasks.update(existing.name, task) : await Tasks.create(task);
+      m.close();
+      toast(editing ? `Saved ${saved.name}` : `Created ${saved.name}`, 'ok');
+      if (onSaved) onSaved(saved.name, editing ? existing.name : null);
+    } catch (e) {
+      err.textContent = e.message;
+      err.hidden = false;
+      save.disabled = false;
+    }
+  }
+
+  const m = modal(el('div', { class: 'modal-card' },
+    el('h2', null, editing ? 'Edit task' : 'New task'),
+    el('form', { class: 'task-form', onsubmit: onSubmit },
+      field('name', f.name),
+      el('div', { class: 'field-row' }, field('type', f.type), field('schedule (cron)', f.cron)),
+      field('working dir', f.working_dir),
+      shellRow, promptRow, tmplRow,
+      el('div', { class: 'field-row' }, field('timeout', f.timeout), field('alert', f.alert)),
+      field('env (KEY=VALUE per line)', f.env),
+      el('label', { class: 'field-check' }, f.enabled, el('span', null, 'enabled')),
+      err,
+      el('div', { class: 'form-actions' },
+        el('button', { type: 'button', class: 'btn', onclick: () => m.close() }, 'cancel'),
+        save))));
+  syncType();
+  f.name.focus();
 }
 
 // ---------- router ----------
@@ -221,7 +370,9 @@ const POLL_MS = 3000;
 function renderList(root) {
   const head = el('div', { class: 'page-head' },
     el('h1', null, 'Tasks'),
-    el('span', { class: 'meta', id: 'listMeta' }, ''));
+    el('span', { class: 'meta', id: 'listMeta' }, ''),
+    el('span', { class: 'spacer' }),
+    el('button', { class: 'btn primary sm', onclick: () => openTaskForm(null, () => load(true)) }, '+ New task'));
   const slot = el('div', { id: 'listSlot' }, loadingState());
   root.append(head, slot);
 
@@ -356,6 +507,22 @@ function renderDetail(root, name) {
     }
   }
 
+  // After an edit: follow a rename to the new URL, otherwise just refresh.
+  function onEdited(newName, oldName) {
+    if (oldName && newName !== oldName) location.hash = '#/task/' + encodeURIComponent(newName);
+    else load(true);
+  }
+
+  function deleteTask() {
+    confirmModal('Delete task',
+      `Delete "${name}"? It is removed from config.yaml. Run history on disk is kept.`,
+      'delete', async () => {
+        await Tasks.remove(name);
+        toast(`Deleted ${name}`, 'ok');
+        location.hash = '#/';
+      });
+  }
+
   function configCard(t) {
     const rows = [];
     const kv = (k, v, mono = true) => {
@@ -421,6 +588,8 @@ function renderDetail(root, name) {
     clear(slot);
     const bar = el('div', { class: 'log-head' },
       el('button', { class: 'btn primary sm', onclick: (ev) => runTask(ev.currentTarget) }, 'run now'),
+      el('button', { class: 'btn sm', onclick: () => openTaskForm(t, onEdited) }, 'edit'),
+      el('button', { class: 'btn sm danger', onclick: () => deleteTask() }, 'delete'),
       el('span', { class: 'spacer' }),
       el('span', { class: 'log-state' },
         el('span', { class: 'dot' + (d.running ? ' live' : '') }),

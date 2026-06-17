@@ -279,6 +279,76 @@ label.toggle input { accent-color: var(--accent); }
 .toast.err { border-color: rgba(248,81,73,.5); color: #ffb3ae; }
 .toast.ok { border-color: rgba(63,185,80,.5); color: #a6e6b0; }
 
+/* ---------- generic flex spacer ---------- */
+.spacer { flex: 1; }
+
+/* ---------- buttons: danger variant ---------- */
+.btn.danger { color: #ffb3ae; border-color: rgba(248,81,73,.4); }
+.btn.danger:hover { background: rgba(248,81,73,.14); border-color: rgba(248,81,73,.6); }
+.btn.primary.danger { background: var(--st-failed); border-color: var(--st-failed); color: #fff; }
+.btn.primary.danger:hover { background: #e5453c; }
+
+/* ---------- modal (task editor / confirm) ---------- */
+.modal-overlay {
+  position: fixed;
+  inset: 0;
+  background: rgba(1,4,9,.66);
+  display: flex;
+  align-items: flex-start;
+  justify-content: center;
+  padding: 7vh 16px 16px;
+  overflow: auto;
+  z-index: 100;
+}
+.modal-card {
+  background: var(--bg-2);
+  border: 1px solid var(--border-2);
+  border-radius: 10px;
+  width: 100%;
+  max-width: 560px;
+  padding: 18px 20px 20px;
+  box-shadow: 0 16px 48px rgba(1,4,9,.6);
+}
+.modal-card.sm { max-width: 420px; }
+.modal-card > h2 { margin: 0 0 14px; font-size: 16px; font-weight: 600; }
+.modal-body { margin: 0 0 18px; color: var(--fg-dim); line-height: 1.5; }
+
+.task-form { display: flex; flex-direction: column; gap: 13px; }
+.field { display: flex; flex-direction: column; gap: 5px; }
+/* `.field { display:flex }` outranks the UA `[hidden]{display:none}` rule, so a
+   hidden field stays visible without this more-specific override. */
+.task-form .field[hidden] { display: none; }
+.field-row { display: flex; gap: 13px; }
+.field-row > .field { flex: 1; }
+.field-label { font-size: 12.5px; color: var(--fg-dim); }
+.field-hint { font-size: 11.5px; color: var(--fg-faint); }
+.task-form input[type="text"],
+.task-form select,
+.task-form textarea {
+  font: inherit;
+  color: var(--fg);
+  background: var(--bg);
+  border: 1px solid var(--border-2);
+  border-radius: 6px;
+  padding: 7px 9px;
+  width: 100%;
+}
+.task-form textarea { font-family: var(--mono); font-size: 12.5px; resize: vertical; }
+.task-form input:focus,
+.task-form select:focus,
+.task-form textarea:focus { outline: none; border-color: var(--accent); }
+.field-check { display: flex; align-items: center; gap: 8px; font-size: 13px; color: var(--fg-dim); }
+.field-check input { width: auto; }
+.form-err {
+  color: #ffb3ae;
+  background: rgba(248,81,73,.1);
+  border: 1px solid rgba(248,81,73,.3);
+  border-radius: 6px;
+  padding: 8px 10px;
+  font-size: 13px;
+}
+.form-actions { display: flex; justify-content: flex-end; gap: 10px; margin-top: 4px; }
+
 /* ---------- responsive ---------- */
 @media (max-width: 720px) {
   .crumbs { display: none; }
@@ -286,4 +356,5 @@ label.toggle input { accent-color: var(--accent); }
   .kv > div { border-bottom: 1px solid var(--border); }
   .hide-sm { display: none; }
   .view { padding: 12px; }
+  .field-row { flex-direction: column; gap: 13px; }
 }
