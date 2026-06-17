@@ -130,6 +130,14 @@ const Tasks = {
   reload: () => api('/api/reload', { method: 'POST' }),
 };
 
+// Runners are the named agent command templates a task selects by name.
+const Runners = {
+  list: () => api('/api/runners'),
+  create: (r) => api('/api/runners', jsonOpts('POST', r)),
+  update: (name, r) => api('/api/runners/' + encodeURIComponent(name), jsonOpts('PUT', r)),
+  remove: (name) => api('/api/runners/' + encodeURIComponent(name), { method: 'DELETE' }),
+};
+
 // jsonOpts builds fetch options for a JSON request body.
 function jsonOpts(method, body) {
   return { method, headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) };
@@ -190,7 +198,7 @@ function formToTask(f) {
     enabled: f.enabled.checked,
   };
   if (type === 'agent') {
-    t.cmd_tmpl = f.cmd_tmpl.value.trim();
+    t.runner = f.runner.value;
     t.prompt = f.prompt.value;
   } else {
     t.command = f.command.value;
@@ -210,10 +218,14 @@ function formToTask(f) {
 
 // openTaskForm shows the create form (existing omitted) or an edit form.
 // onSaved(newName, oldName) runs after a successful save (oldName is null on create).
-function openTaskForm(existing, onSaved) {
+// It loads the runner registry first so agent tasks select a runner by name.
+async function openTaskForm(existing, onSaved) {
   const editing = !!existing;
   const t = existing || { type: 'shell', enabled: true };
   const f = {};
+
+  let runners = [];
+  try { runners = await Runners.list(); } catch (_) { /* offer an empty list */ }
 
   const field = (label, node, hint) => el('label', { class: 'field' },
     el('span', { class: 'field-label' }, label),
@@ -228,7 +240,13 @@ function openTaskForm(existing, onSaved) {
   f.working_dir = el('input', { type: 'text', value: t.working_dir || '', placeholder: '~/project', autocomplete: 'off', spellcheck: 'false' });
   f.command = el('textarea', { rows: '2', placeholder: './run.sh', spellcheck: 'false' }, t.command || '');
   f.prompt = el('textarea', { rows: '2', placeholder: 'Inspect logs and summarise.' }, t.prompt || '');
-  f.cmd_tmpl = el('input', { type: 'text', value: t.cmd_tmpl || '', placeholder: 'claude -p "{{.Prompt}}"', autocomplete: 'off', spellcheck: 'false' });
+  const runnerNames = runners.map((r) => r.name);
+  // Keep an unknown/legacy reference visible so editing doesn't silently drop it.
+  if (t.runner && !runnerNames.includes(t.runner)) runnerNames.unshift(t.runner);
+  f.runner = el('select', null,
+    el('option', { value: '', selected: !t.runner },
+      runnerNames.length ? '— select a runner —' : '— no runners defined —'),
+    ...runnerNames.map((n) => el('option', { value: n, selected: t.runner === n }, n)));
   f.timeout = el('input', { type: 'text', value: t.timeout && t.timeout !== '0s' ? t.timeout : '', placeholder: '1h (default)', autocomplete: 'off', spellcheck: 'false' });
   f.alert = el('select', null,
     ...['on_failure', 'on_success', 'always', 'never'].map(
@@ -239,7 +257,11 @@ function openTaskForm(existing, onSaved) {
 
   const shellRow = field('command', f.command, 'run via the configured shell');
   const promptRow = field('prompt', f.prompt);
-  const tmplRow = field('command template', f.cmd_tmpl, '{{.Prompt}} {{.TaskName}} {{.WorkingDir}} are rendered');
+  const legacyTmpl = t.cmd_tmpl && !t.runner;
+  const tmplRow = field('runner', f.runner,
+    legacyTmpl
+      ? 'this task uses an inline cmd_tmpl; pick a runner to replace it · manage in Settings → Runners'
+      : 'agent command template · manage in Settings → Runners');
 
   function syncType() {
     const agent = f.type.value === 'agent';
@@ -286,6 +308,116 @@ function openTaskForm(existing, onSaved) {
         save))));
   syncType();
   f.name.focus();
+}
+
+// ---------- settings: shared registries (runners; channels added later) ----------
+
+// openSettings shows a tabbed modal for managing the registries that tasks
+// reference by name. Each tab CRUDs its registry in place.
+function openSettings(initialTab = 'runners') {
+  const tabsDef = [
+    { id: 'runners', label: 'Runners', render: renderRunnersTab },
+  ];
+  const body = el('div', { class: 'settings-body' });
+  const tabBar = el('div', { class: 'tabs' });
+  function select(id) {
+    for (const b of tabBar.children) b.classList.toggle('active', b.dataset.tab === id);
+    clear(body);
+    (tabsDef.find((t) => t.id === id) || tabsDef[0]).render(body);
+  }
+  for (const t of tabsDef) {
+    tabBar.append(el('button',
+      { type: 'button', class: 'tab', dataset: { tab: t.id }, onclick: () => select(t.id) }, t.label));
+  }
+  modal(el('div', { class: 'modal-card lg' },
+    el('h2', null, 'Settings'),
+    tabBar, body));
+  select(tabsDef.some((t) => t.id === initialTab) ? initialTab : tabsDef[0].id);
+}
+
+// renderRunnersTab lists the agent runners with add / edit / delete.
+function renderRunnersTab(container) {
+  const slot = el('div', null, loadingState());
+  const head = el('div', { class: 'settings-head' },
+    el('p', { class: 'settings-hint' }, 'Reusable agent command templates. Agent tasks pick a runner by name.'),
+    el('span', { class: 'spacer' }),
+    el('button', { class: 'btn primary sm', onclick: () => openRunnerForm(null, reload) }, '+ Add runner'));
+  container.append(head, slot);
+
+  async function reload() {
+    clear(slot);
+    slot.append(loadingState());
+    try {
+      const runners = await Runners.list();
+      clear(slot);
+      if (!runners.length) {
+        slot.append(emptyState('No runners yet', 'Add one to use it in agent tasks.'));
+        return;
+      }
+      const rows = runners.map((r) => el('div', { class: 'reg-row' },
+        el('div', { class: 'reg-main' },
+          el('div', { class: 'reg-name' }, r.name),
+          el('div', { class: 'reg-sub mono' }, r.cmd_tmpl)),
+        el('div', { class: 'reg-actions' },
+          el('button', { class: 'btn sm', onclick: () => openRunnerForm(r, reload) }, 'edit'),
+          el('button', { class: 'btn sm danger', onclick: () => askDelete(r) }, 'delete'))));
+      slot.append(el('div', { class: 'reg-list' }, rows));
+    } catch (e) {
+      clear(slot);
+      slot.append(errorState(e.message, reload));
+    }
+  }
+
+  function askDelete(r) {
+    confirmModal('Delete runner', `Delete runner "${r.name}"? Tasks still using it must be updated first.`,
+      'delete', async () => { await Runners.remove(r.name); toast(`Deleted ${r.name}`, 'ok'); reload(); });
+  }
+
+  reload();
+}
+
+// openRunnerForm shows a small create / edit form for a single runner.
+function openRunnerForm(existing, onSaved) {
+  const editing = !!existing;
+  const r = existing || {};
+  const field = (label, node, hint) => el('label', { class: 'field' },
+    el('span', { class: 'field-label' }, label), node,
+    hint ? el('span', { class: 'field-hint' }, hint) : null);
+
+  const name = el('input', { type: 'text', value: r.name || '', placeholder: 'claude-stream', autocomplete: 'off', spellcheck: 'false' });
+  const cmd = el('textarea', { rows: '3', placeholder: 'claude -p "{{.Prompt}}" --output-format stream-json --verbose --permission-mode acceptEdits', spellcheck: 'false' }, r.cmd_tmpl || '');
+  const err = el('div', { class: 'form-err', hidden: true });
+  const save = el('button', { type: 'submit', class: 'btn primary' }, editing ? 'save' : 'create');
+
+  async function onSubmit(ev) {
+    ev.preventDefault();
+    const payload = { name: name.value.trim(), cmd_tmpl: cmd.value.trim() };
+    if (!payload.name) { err.textContent = 'name is required'; err.hidden = false; return; }
+    if (!payload.cmd_tmpl) { err.textContent = 'command template is required'; err.hidden = false; return; }
+    save.disabled = true;
+    err.hidden = true;
+    try {
+      const saved = editing ? await Runners.update(existing.name, payload) : await Runners.create(payload);
+      m.close();
+      toast(editing ? `Saved ${saved.name}` : `Created ${saved.name}`, 'ok');
+      if (onSaved) onSaved();
+    } catch (e) {
+      err.textContent = e.message;
+      err.hidden = false;
+      save.disabled = false;
+    }
+  }
+
+  const m = modal(el('div', { class: 'modal-card' },
+    el('h2', null, editing ? 'Edit runner' : 'New runner'),
+    el('form', { class: 'task-form', onsubmit: onSubmit },
+      field('name', name),
+      field('command template', cmd, '{{.Prompt}} {{.TaskName}} {{.WorkingDir}} are rendered'),
+      err,
+      el('div', { class: 'form-actions' },
+        el('button', { type: 'button', class: 'btn', onclick: () => m.close() }, 'cancel'),
+        save))));
+  name.focus();
 }
 
 // ---------- router ----------
@@ -535,7 +667,8 @@ function renderDetail(root, name) {
     kv('working dir', t.working_dir);
     if (t.type === 'agent') {
       kv('prompt', t.prompt);
-      kv('cmd template', t.cmd_tmpl);
+      kv('runner', t.runner);
+      if (t.cmd_tmpl && !t.runner) kv('cmd template', t.cmd_tmpl);
     } else {
       kv('command', t.command);
     }
@@ -748,6 +881,8 @@ function renderLog(root, name, id) {
 // ========================================================================
 // boot
 // ========================================================================
+
+$('#settingsBtn').addEventListener('click', () => openSettings());
 
 $('#refreshBtn').addEventListener('click', () => {
   if (typeof active.refresh === 'function') active.refresh();

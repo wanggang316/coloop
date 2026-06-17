@@ -98,6 +98,27 @@ func expandHome(p string) string {
 func Validate(cfg *model.Config) error {
 	var errs []error
 
+	// Validate the runner registry first and collect its names, so task
+	// references below can be checked against it.
+	runners := make(map[string]struct{}, len(cfg.Runners))
+	for i := range cfg.Runners {
+		r := &cfg.Runners[i]
+		label := r.Name
+		if label == "" {
+			label = fmt.Sprintf("runners[%d]", i)
+		}
+		if strings.TrimSpace(r.Name) == "" {
+			errs = append(errs, fmt.Errorf("%s: name is required", label))
+		} else if _, dup := runners[r.Name]; dup {
+			errs = append(errs, fmt.Errorf("runner %q: duplicate name", r.Name))
+		} else {
+			runners[r.Name] = struct{}{}
+		}
+		if strings.TrimSpace(r.CmdTmpl) == "" {
+			errs = append(errs, fmt.Errorf("runner %q: cmd_tmpl is required", label))
+		}
+	}
+
 	seen := make(map[string]struct{}, len(cfg.Tasks))
 	for i := range cfg.Tasks {
 		t := &cfg.Tasks[i]
@@ -125,8 +146,13 @@ func Validate(cfg *model.Config) error {
 				errs = append(errs, fmt.Errorf("task %q: shell task requires command", label))
 			}
 		case model.TaskAgent:
-			if t.CmdTmpl == "" {
-				errs = append(errs, fmt.Errorf("task %q: agent task requires cmd_tmpl", label))
+			if t.Runner == "" && t.CmdTmpl == "" {
+				errs = append(errs, fmt.Errorf("task %q: agent task requires a runner or cmd_tmpl", label))
+			}
+			if t.Runner != "" {
+				if _, ok := runners[t.Runner]; !ok {
+					errs = append(errs, fmt.Errorf("task %q: unknown runner %q", label, t.Runner))
+				}
 			}
 		case "":
 			errs = append(errs, fmt.Errorf("task %q: type is required (shell or agent)", label))

@@ -123,7 +123,8 @@ type Task struct {
 	WorkingDir string            `yaml:"working_dir" json:"working_dir"` // cwd for the command
 	Command    string            `yaml:"command" json:"command"`         // shell: script / command
 	Prompt     string            `yaml:"prompt" json:"prompt"`           // agent: prompt text
-	CmdTmpl    string            `yaml:"cmd_tmpl" json:"cmd_tmpl"`       // agent: command template
+	CmdTmpl    string            `yaml:"cmd_tmpl" json:"cmd_tmpl"`       // agent: inline command template (legacy; prefer Runner)
+	Runner     string            `yaml:"runner" json:"runner"`           // agent: name of a shared runner (see Config.Runners)
 	Env        map[string]string `yaml:"env" json:"env"`                 // extra environment variables
 	Timeout    Duration          `yaml:"timeout" json:"timeout"`
 	Alert      AlertPolicy       `yaml:"alert" json:"alert"`
@@ -132,6 +133,15 @@ type Task struct {
 
 // IsEnabled defaults to true when unset.
 func (t Task) IsEnabled() bool { return t.Enabled == nil || *t.Enabled }
+
+// AgentRunner is a reusable agent command template, referenced by agent tasks
+// via Task.Runner so the command line is defined once and selected by name.
+// The template is rendered with the same data as an inline cmd_tmpl
+// ({{.Prompt}}, {{.TaskName}}, {{.WorkingDir}}, {{.Env}}).
+type AgentRunner struct {
+	Name    string `yaml:"name" json:"name"`
+	CmdTmpl string `yaml:"cmd_tmpl" json:"cmd_tmpl"`
+}
 
 // Run is a single execution record persisted under runs/<task>/<id>/.
 type Run struct {
@@ -166,6 +176,7 @@ type Config struct {
 	Shell     string         `yaml:"shell"`     // default shell for shell tasks
 	DataDir   string         `yaml:"data_dir"`  // base dir for runs/ (default: dir of config)
 	Tasks     []Task         `yaml:"tasks"`     // task definitions
+	Runners   []AgentRunner  `yaml:"runners"`   // reusable agent command templates, referenced by Task.Runner
 	Notifiers NotifierConfig `yaml:"notifiers"` // alert channel credentials
 
 	// Run-record retention (applied per task after each run finishes). Both

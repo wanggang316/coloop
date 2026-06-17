@@ -21,6 +21,16 @@ data_dir: ~/.the-loop
 max_runs: 50            # keep only the newest N runs per task (0 = unlimited)
 # max_run_age: 720h     # also delete runs older than this duration (e.g. 30 days)
 
+# Reusable agent command templates. Define a runner once here, then have agent
+# tasks select it by name (task.runner) instead of repeating the command line.
+# {{.Prompt}}, {{.TaskName}}, {{.WorkingDir}} and {{.Env}} are rendered; the
+# prompt and task name are also exported as $PROMPT / $TASK_NAME.
+runners:
+  - name: claude-stream
+    # Stream progress so the live log shows activity, and allow edits headlessly
+    # so the agent can actually run its tools without an interactive prompt.
+    cmd_tmpl: 'claude -p "{{.Prompt}}" --output-format stream-json --verbose --permission-mode acceptEdits'
+
 # Optional alert channels. Omit a block to disable that channel.
 notifiers:
   feishu:
@@ -44,13 +54,13 @@ tasks:
     timeout: 1h                  # parsed durations like 30s/10m/1h; default 1h
     alert: on_failure            # on_failure | on_success | always | never
 
-  # Invoke an agent via a command template. {{.Prompt}}, {{.TaskName}},
-  # {{.WorkingDir}} are rendered; $PROMPT and $TASK_NAME are also exported.
+  # Invoke an agent. Pick a runner (defined above) instead of inlining the
+  # command line; the runner's cmd_tmpl is rendered with this task's prompt.
   - name: agent-triage
     type: agent
     cron: "0 */2 * * *"
     working_dir: ~/projects/web
-    cmd_tmpl: 'claude -p "{{.Prompt}}"'
+    runner: claude-stream
     prompt: Inspect today's alert logs and summarize action items.
     alert: always
 

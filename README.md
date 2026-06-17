@@ -8,8 +8,9 @@ alerts to Feishu and Telegram.
 ## Features
 
 - **Two execution modes** — run a local **shell** script, or invoke an
-  **agent** through a configurable command template (e.g. `claude -p "{{.Prompt}}"`),
-  each with its own `working_dir` and `env`.
+  **agent** through a reusable **runner** (a named command template such as
+  `claude -p "{{.Prompt}}"`, defined once and selected by name), each with its
+  own `working_dir` and `env`.
 - **Schedule or trigger** — standard 5-field cron expressions for automatic
   runs, plus manual one-click / one-command triggers.
 - **Observable** — embedded web UI with three views (task list, task detail,

@@ -334,12 +334,45 @@ func TestValidate(t *testing.T) {
 			substr:  "shell task requires command",
 		},
 		{
-			name: "agent without cmd_tmpl",
+			name: "agent without runner or cmd_tmpl",
 			cfg: &model.Config{Tasks: []model.Task{
 				{Name: "a", Type: model.TaskAgent},
 			}},
 			wantErr: true,
-			substr:  "agent task requires cmd_tmpl",
+			substr:  "agent task requires a runner or cmd_tmpl",
+		},
+		{
+			name: "agent with valid runner reference",
+			cfg: &model.Config{
+				Runners: []model.AgentRunner{{Name: "claude", CmdTmpl: "claude -p {{.Prompt}}"}},
+				Tasks:   []model.Task{{Name: "a", Type: model.TaskAgent, Runner: "claude"}},
+			},
+			wantErr: false,
+		},
+		{
+			name: "agent referencing unknown runner",
+			cfg: &model.Config{Tasks: []model.Task{
+				{Name: "a", Type: model.TaskAgent, Runner: "ghost"},
+			}},
+			wantErr: true,
+			substr:  `unknown runner "ghost"`,
+		},
+		{
+			name: "runner without cmd_tmpl",
+			cfg: &model.Config{
+				Runners: []model.AgentRunner{{Name: "blank"}},
+			},
+			wantErr: true,
+			substr:  "cmd_tmpl is required",
+		},
+		{
+			name: "duplicate runner names",
+			cfg: &model.Config{Runners: []model.AgentRunner{
+				{Name: "dup", CmdTmpl: "a {{.Prompt}}"},
+				{Name: "dup", CmdTmpl: "b {{.Prompt}}"},
+			}},
+			wantErr: true,
+			substr:  "duplicate name",
 		},
 		{
 			name: "bad cron",

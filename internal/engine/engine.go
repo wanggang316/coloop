@@ -250,6 +250,9 @@ func (e *Engine) runOnce(task model.Task, run model.Run, b *broadcaster) (model.
 	ctx, cancel := context.WithTimeout(context.Background(), timeout)
 	defer cancel()
 
+	if task.Type == model.TaskAgent && task.Runner != "" {
+		task.CmdTmpl = e.runnerCmdTmpl(task.Runner)
+	}
 	exec := e.executorFor(task)
 	res, runErr := exec.Run(ctx, task, w)
 	live.flush() // emit any trailing partial line before terminating the stream
@@ -259,6 +262,21 @@ func (e *Engine) runOnce(task model.Task, run model.Run, b *broadcaster) (model.
 		return model.StatusFailed, -1
 	}
 	return res.Status, res.ExitCode
+}
+
+// runnerCmdTmpl resolves a runner name to its command template from the live
+// config. Validate guarantees a referenced runner exists, but if it has gone
+// missing (e.g. a race with an edit) the empty string is returned and the agent
+// executor reports the empty-template error.
+func (e *Engine) runnerCmdTmpl(name string) string {
+	e.cfgMu.RLock()
+	defer e.cfgMu.RUnlock()
+	for i := range e.cfg.Runners {
+		if e.cfg.Runners[i].Name == name {
+			return e.cfg.Runners[i].CmdTmpl
+		}
+	}
+	return ""
 }
 
 // executorFor picks the executor matching the task type, defaulting to shell.
