@@ -133,6 +133,7 @@ const Tasks = {
 // Runners are the named agent command templates a task selects by name.
 const Runners = {
   list: () => api('/api/runners'),
+  presets: () => api('/api/runner-presets'),
   create: (r) => api('/api/runners', jsonOpts('POST', r)),
   update: (name, r) => api('/api/runners/' + encodeURIComponent(name), jsonOpts('PUT', r)),
   remove: (name) => api('/api/runners/' + encodeURIComponent(name), { method: 'DELETE' }),
@@ -406,18 +407,39 @@ function renderRunnersTab(container) {
   reload();
 }
 
-// openRunnerForm shows a small create / edit form for a single runner.
-function openRunnerForm(existing, onSaved) {
+// openRunnerForm shows a small create / edit form for a single runner. It loads
+// the built-in presets so a new runner can start from a Claude Code / Codex
+// template and then be edited.
+async function openRunnerForm(existing, onSaved) {
   const editing = !!existing;
   const r = existing || {};
+  let presets = [];
+  try { presets = (await Runners.presets()) || []; } catch (_) { /* no presets offered */ }
+
   const field = (label, node, hint) => el('label', { class: 'field' },
     el('span', { class: 'field-label' }, label), node,
     hint ? el('span', { class: 'field-hint' }, hint) : null);
 
-  const name = el('input', { type: 'text', value: r.name || '', placeholder: 'claude-stream', autocomplete: 'off', spellcheck: 'false' });
+  const name = el('input', { type: 'text', value: r.name || '', placeholder: 'claude-code', autocomplete: 'off', spellcheck: 'false' });
   const cmd = el('textarea', { rows: '3', placeholder: 'claude -p "{{.Prompt}}" --output-format stream-json --verbose --permission-mode acceptEdits', spellcheck: 'false' }, r.cmd_tmpl || '');
   const err = el('div', { class: 'form-err', hidden: true });
   const save = el('button', { type: 'submit', class: 'btn primary' }, editing ? 'save' : 'create');
+
+  // "Start from" picker: selecting a preset fills the command template (and the
+  // name, when still blank), then the user edits freely.
+  const presetHint = el('span', { class: 'field-hint' }, 'pick a built-in template to start from, then edit');
+  const preset = el('select', null,
+    el('option', { value: '', selected: true }, '— blank —'),
+    ...presets.map((p, i) => el('option', { value: String(i) }, p.label)));
+  preset.addEventListener('change', () => {
+    const p = presets[Number(preset.value)];
+    if (!p) return;
+    cmd.value = p.cmd_tmpl;
+    if (!name.value.trim()) name.value = p.name;
+    presetHint.textContent = p.description || presetHint.textContent;
+  });
+  const presetRow = presets.length ? field('start from', preset, '') : null;
+  if (presetRow) presetRow.append(presetHint);
 
   async function onSubmit(ev) {
     ev.preventDefault();
@@ -441,6 +463,7 @@ function openRunnerForm(existing, onSaved) {
   const m = modal(el('div', { class: 'modal-card' },
     el('h2', null, editing ? 'Edit runner' : 'New runner'),
     el('form', { class: 'task-form', onsubmit: onSubmit },
+      presetRow,
       field('name', name),
       field('command template', cmd, '{{.Prompt}} {{.TaskName}} {{.WorkingDir}} are rendered'),
       err,

@@ -25,32 +25,44 @@ max_runs: 50            # keep only the newest N runs per task (0 = unlimited)
 # tasks select it by name (task.runner) instead of repeating the command line.
 # {{.Prompt}}, {{.TaskName}}, {{.WorkingDir}} and {{.Env}} are rendered; the
 # prompt and task name are also exported as $PROMPT / $TASK_NAME.
+#
+# The Web UI ships built-in "Claude Code" and "Codex" presets you can start a
+# runner from and then edit — these two entries mirror those presets. Both
+# stream structured output so the live log shows progress instead of staying
+# silent until the run ends.
 runners:
-  - name: claude-stream
-    # Stream progress so the live log shows activity, and allow edits headlessly
-    # so the agent can actually run its tools without an interactive prompt.
+  - name: claude-code
+    # acceptEdits auto-applies file edits; for unattended tasks that run
+    # shell/git, swap in --dangerously-skip-permissions.
     cmd_tmpl: 'claude -p "{{.Prompt}}" --output-format stream-json --verbose --permission-mode acceptEdits'
+  - name: codex
+    # --full-auto runs sandboxed with automatic approvals.
+    cmd_tmpl: 'codex exec --json --full-auto "{{.Prompt}}"'
 
 # Named alert channels. Define a channel once here, then list its name under a
 # task's `notifiers:` to send that task's alerts there. A task with no
 # `notifiers` alerts nobody (the `alert:` policy only decides whether to alert;
 # `notifiers` decides where).
 #
+# Left commented so this file loads as-is — a channel is only valid once it has
+# real credentials (feishu needs a webhook or cli_path; telegram needs a
+# bot_token and chat_id). Uncomment, fill in, then reference the names below.
+#
 # The older single-channel `notifiers: {feishu: …, telegram: …}` block is still
 # accepted: on load it is migrated into named channels "feishu"/"telegram".
-notifier_channels:
-  - name: team-feishu
-    type: feishu
-    feishu:
-      webhook: ""        # custom bot webhook URL
-      secret: ""         # webhook signing secret (optional)
-      # cli_path: ""     # alternatively, path to a feishu CLI binary
-  - name: my-telegram
-    type: telegram
-    telegram:
-      bot_token: ""
-      chat_id: ""
-      # api_base: "https://api.telegram.org"   # override (e.g. for testing)
+# notifier_channels:
+#   - name: team-feishu
+#     type: feishu
+#     feishu:
+#       webhook: "https://open.feishu.cn/open-apis/bot/v2/hook/xxxx"
+#       secret: ""        # webhook signing secret (optional)
+#       # cli_path: ""    # alternatively, path to a feishu CLI binary
+#   - name: my-telegram
+#     type: telegram
+#     telegram:
+#       bot_token: "123456:ABC-DEF"
+#       chat_id: "-1001234567890"
+#       # api_base: "https://api.telegram.org"   # override (e.g. for testing)
 
 tasks:
   # A scheduled local script.
@@ -63,7 +75,7 @@ tasks:
       ENV: prod
     timeout: 1h                  # parsed durations like 30s/10m/1h; default 1h
     alert: on_failure            # on_failure | on_success | always | never
-    notifiers: [team-feishu]     # which channel(s) get this task's alerts
+    # notifiers: [team-feishu]   # channel name(s) from notifier_channels above
 
   # Invoke an agent. Pick a runner (defined above) instead of inlining the
   # command line; the runner's cmd_tmpl is rendered with this task's prompt.
@@ -71,10 +83,10 @@ tasks:
     type: agent
     cron: "0 */2 * * *"
     working_dir: ~/projects/web
-    runner: claude-stream
+    runner: claude-code
     prompt: Inspect today's alert logs and summarize action items.
     alert: always
-    notifiers: [team-feishu, my-telegram]
+    # notifiers: [team-feishu, my-telegram]
 
   # A manual-only task (no cron); trigger from the UI or `the-loop run hello`.
   - name: hello
