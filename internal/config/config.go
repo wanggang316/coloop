@@ -31,6 +31,14 @@ func Load(path string) (*model.Config, error) {
 
 	applyDefaults(&cfg, path)
 
+	// Seed the built-in runners when the config declares none, so the common
+	// agents show up in the Runners list ready to use (and editable/deletable).
+	// Done only here, on load — not in applyDefaults — so deleting a runner via
+	// the API (which re-runs ApplyDefaults) is never undone by re-seeding.
+	if len(cfg.Runners) == 0 {
+		cfg.Runners = append([]model.AgentRunner(nil), model.DefaultRunners...)
+	}
+
 	if err := Validate(&cfg); err != nil {
 		return nil, err
 	}

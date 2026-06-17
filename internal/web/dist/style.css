@@ -368,7 +368,6 @@ label.toggle input { accent-color: var(--accent); }
 .tabs .tab.active { color: var(--fg); border-bottom-color: var(--accent); }
 .settings-head { display: flex; align-items: center; gap: 12px; margin-bottom: 12px; }
 .settings-hint { margin: 0; font-size: 12.5px; color: var(--fg-dim); }
-.settings-subhead { margin: 16px 0 8px; font-size: 12px; font-weight: 600; text-transform: uppercase; letter-spacing: .04em; color: var(--fg-faint); }
 .reg-list { display: flex; flex-direction: column; gap: 8px; }
 .reg-row {
   display: flex;

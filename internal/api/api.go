@@ -35,7 +35,6 @@ func New(e *engine.Engine, ui fs.FS, reload func() error) http.Handler {
 	mux.HandleFunc("GET /api/tasks/{name}/runs/{id}", s.getRun)
 	mux.HandleFunc("GET /api/tasks/{name}/runs/{id}/log", s.runLog)
 	mux.HandleFunc("GET /api/tasks/{name}/runs/{id}/stream", s.runStream)
-	mux.HandleFunc("GET /api/runner-presets", s.listRunnerPresets)
 	mux.HandleFunc("GET /api/runners", s.listRunners)
 	mux.HandleFunc("POST /api/runners", s.createRunner)
 	mux.HandleFunc("PUT /api/runners/{name}", s.updateRunner)
@@ -119,12 +118,6 @@ func (s *server) deleteTask(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	w.WriteHeader(http.StatusNoContent)
-}
-
-// listRunnerPresets serves the built-in runner templates the UI offers as
-// starting points. They are static, so this needs nothing from the engine.
-func (s *server) listRunnerPresets(w http.ResponseWriter, _ *http.Request) {
-	writeJSON(w, http.StatusOK, model.RunnerPresets)
 }
 
 func (s *server) listRunners(w http.ResponseWriter, _ *http.Request) {

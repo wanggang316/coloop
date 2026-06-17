@@ -26,10 +26,10 @@ max_runs: 50            # keep only the newest N runs per task (0 = unlimited)
 # {{.Prompt}}, {{.TaskName}}, {{.WorkingDir}} and {{.Env}} are rendered; the
 # prompt and task name are also exported as $PROMPT / $TASK_NAME.
 #
-# The Web UI ships built-in "Claude Code" and "Codex" presets you can start a
-# runner from and then edit — these two entries mirror those presets. Both
-# stream structured output so the live log shows progress instead of staying
-# silent until the run ends.
+# If you declare no runners, the two below are seeded automatically so the
+# common agents show up ready to use (and editable/deletable). Both stream
+# structured output so the live log shows progress instead of staying silent
+# until the run ends. List them here to customise or pin them.
 runners:
   - name: claude-code
     # acceptEdits auto-applies file edits; for unattended tasks that run

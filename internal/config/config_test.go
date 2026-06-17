@@ -246,6 +246,43 @@ tasks:
 	}
 }
 
+func TestLoadSeedsDefaultRunnersWhenEmpty(t *testing.T) {
+	// A config with no runners gets the built-in defaults seeded.
+	path := writeConfig(t, `
+tasks:
+  - name: hello
+    type: shell
+    command: echo hi
+`)
+	cfg, err := Load(path)
+	if err != nil {
+		t.Fatalf("Load: %v", err)
+	}
+	if len(cfg.Runners) != len(model.DefaultRunners) {
+		t.Fatalf("seeded runners = %d, want %d", len(cfg.Runners), len(model.DefaultRunners))
+	}
+	if cfg.Runners[0].Name != model.DefaultRunners[0].Name {
+		t.Errorf("first seeded runner = %q, want %q", cfg.Runners[0].Name, model.DefaultRunners[0].Name)
+	}
+}
+
+func TestLoadDoesNotSeedWhenRunnersDeclared(t *testing.T) {
+	// An explicit runners list is left untouched — defaults are not appended.
+	path := writeConfig(t, `
+runners:
+  - name: mine
+    cmd_tmpl: 'claude -p "{{.Prompt}}"'
+tasks: []
+`)
+	cfg, err := Load(path)
+	if err != nil {
+		t.Fatalf("Load: %v", err)
+	}
+	if len(cfg.Runners) != 1 || cfg.Runners[0].Name != "mine" {
+		t.Fatalf("runners = %+v, want only the declared 'mine'", cfg.Runners)
+	}
+}
+
 func TestLoadFileNotFound(t *testing.T) {
 	_, err := Load(filepath.Join(t.TempDir(), "does-not-exist.yaml"))
 	if err == nil {
