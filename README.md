@@ -15,8 +15,9 @@ alerts to Feishu and Telegram.
   runs, plus manual one-click / one-command triggers.
 - **Observable** — embedded web UI with three views (task list, task detail,
   live log) backed by a JSON REST + SSE API.
-- **Alerts** — Feishu (webhook or CLI) and Telegram, gated by an
-  `on_failure` / `on_success` / `always` / `never` policy per task.
+- **Alerts** — named Feishu (webhook or CLI) and Telegram channels defined
+  once and selected per task, gated by an
+  `on_failure` / `on_success` / `always` / `never` policy.
 - **Lightweight & stable** — one cross-compiled binary, config in a single
   YAML file, run records on the filesystem (no DB, no schema, no migrations).
   Loopback-only by default.

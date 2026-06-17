@@ -138,6 +138,14 @@ const Runners = {
   remove: (name) => api('/api/runners/' + encodeURIComponent(name), { method: 'DELETE' }),
 };
 
+// Channels are the named notifier channels a task selects to receive alerts.
+const Channels = {
+  list: () => api('/api/notifiers'),
+  create: (c) => api('/api/notifiers', jsonOpts('POST', c)),
+  update: (name, c) => api('/api/notifiers/' + encodeURIComponent(name), jsonOpts('PUT', c)),
+  remove: (name) => api('/api/notifiers/' + encodeURIComponent(name), { method: 'DELETE' }),
+};
+
 // jsonOpts builds fetch options for a JSON request body.
 function jsonOpts(method, body) {
   return { method, headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) };
@@ -203,6 +211,9 @@ function formToTask(f) {
   } else {
     t.command = f.command.value;
   }
+  if (f.notifierBoxes) {
+    t.notifiers = f.notifierBoxes.filter((b) => b.input.checked).map((b) => b.name);
+  }
   const to = f.timeout.value.trim();
   if (to) t.timeout = to;
   const env = {};
@@ -225,7 +236,12 @@ async function openTaskForm(existing, onSaved) {
   const f = {};
 
   let runners = [];
-  try { runners = await Runners.list(); } catch (_) { /* offer an empty list */ }
+  let channels = [];
+  try {
+    const [r, c] = await Promise.all([Runners.list(), Channels.list()]);
+    runners = r || [];
+    channels = c || [];
+  } catch (_) { /* offer empty lists */ }
 
   const field = (label, node, hint) => el('label', { class: 'field' },
     el('span', { class: 'field-label' }, label),
@@ -254,6 +270,18 @@ async function openTaskForm(existing, onSaved) {
   f.enabled = el('input', { type: 'checkbox', checked: t.enabled !== false });
   f.env = el('textarea', { rows: '2', placeholder: 'ENV=prod', spellcheck: 'false' },
     t.env ? Object.entries(t.env).map(([k, v]) => `${k}=${v}`).join('\n') : '');
+
+  // Notifier channels: a checkbox per channel; no selection means no alerts.
+  const selected = new Set(t.notifiers || []);
+  f.notifierBoxes = channels.map((c) => ({
+    name: c.name,
+    input: el('input', { type: 'checkbox', checked: selected.has(c.name) }),
+  }));
+  const notifiersNode = f.notifierBoxes.length
+    ? el('div', { class: 'check-grid' },
+        ...f.notifierBoxes.map((b) => el('label', { class: 'field-check' }, b.input,
+          el('span', null, b.name))))
+    : el('div', { class: 'field-hint' }, 'no channels defined — add one in Settings → Channels');
 
   const shellRow = field('command', f.command, 'run via the configured shell');
   const promptRow = field('prompt', f.prompt);
@@ -300,6 +328,7 @@ async function openTaskForm(existing, onSaved) {
       field('working dir', f.working_dir),
       shellRow, promptRow, tmplRow,
       el('div', { class: 'field-row' }, field('timeout', f.timeout), field('alert', f.alert)),
+      field('notify channels', notifiersNode, 'alert policy decides whether; these decide where'),
       field('env (KEY=VALUE per line)', f.env),
       el('label', { class: 'field-check' }, f.enabled, el('span', null, 'enabled')),
       err,
@@ -317,6 +346,7 @@ async function openTaskForm(existing, onSaved) {
 function openSettings(initialTab = 'runners') {
   const tabsDef = [
     { id: 'runners', label: 'Runners', render: renderRunnersTab },
+    { id: 'channels', label: 'Channels', render: renderChannelsTab },
   ];
   const body = el('div', { class: 'settings-body' });
   const tabBar = el('div', { class: 'tabs' });
@@ -348,7 +378,7 @@ function renderRunnersTab(container) {
     clear(slot);
     slot.append(loadingState());
     try {
-      const runners = await Runners.list();
+      const runners = (await Runners.list()) || [];
       clear(slot);
       if (!runners.length) {
         slot.append(emptyState('No runners yet', 'Add one to use it in agent tasks.'));
@@ -418,6 +448,138 @@ function openRunnerForm(existing, onSaved) {
         el('button', { type: 'button', class: 'btn', onclick: () => m.close() }, 'cancel'),
         save))));
   name.focus();
+}
+
+// channelSummary returns a short, secret-free description of a channel.
+function channelSummary(c) {
+  if (c.type === 'feishu') return c.feishu && c.feishu.cli_path ? 'feishu · cli' : 'feishu · webhook';
+  if (c.type === 'telegram') return c.telegram ? `telegram · chat ${c.telegram.chat_id || '?'}` : 'telegram';
+  return c.type || '—';
+}
+
+// renderChannelsTab lists the notifier channels with add / edit / delete.
+function renderChannelsTab(container) {
+  const slot = el('div', null, loadingState());
+  const head = el('div', { class: 'settings-head' },
+    el('p', { class: 'settings-hint' }, 'Named alert channels. Tasks pick which channels receive their alerts.'),
+    el('span', { class: 'spacer' }),
+    el('button', { class: 'btn primary sm', onclick: () => openChannelForm(null, reload) }, '+ Add channel'));
+  container.append(head, slot);
+
+  async function reload() {
+    clear(slot);
+    slot.append(loadingState());
+    try {
+      const channels = (await Channels.list()) || [];
+      clear(slot);
+      if (!channels.length) {
+        slot.append(emptyState('No channels yet', 'Add one, then select it on a task to get alerts.'));
+        return;
+      }
+      const rows = channels.map((c) => el('div', { class: 'reg-row' },
+        el('div', { class: 'reg-main' },
+          el('div', { class: 'reg-name' }, c.name, ' ', el('span', { class: 'tag' }, c.type)),
+          el('div', { class: 'reg-sub' }, channelSummary(c))),
+        el('div', { class: 'reg-actions' },
+          el('button', { class: 'btn sm', onclick: () => openChannelForm(c, reload) }, 'edit'),
+          el('button', { class: 'btn sm danger', onclick: () => askDelete(c) }, 'delete'))));
+      slot.append(el('div', { class: 'reg-list' }, rows));
+    } catch (e) {
+      clear(slot);
+      slot.append(errorState(e.message, reload));
+    }
+  }
+
+  function askDelete(c) {
+    confirmModal('Delete channel', `Delete channel "${c.name}"? Tasks still using it must be updated first.`,
+      'delete', async () => { await Channels.remove(c.name); toast(`Deleted ${c.name}`, 'ok'); reload(); });
+  }
+
+  reload();
+}
+
+// openChannelForm shows a create / edit form for a single notifier channel,
+// toggling the credential fields to match the selected type.
+function openChannelForm(existing, onSaved) {
+  const editing = !!existing;
+  const c = existing || { type: 'feishu' };
+  const fs = c.feishu || {};
+  const tg = c.telegram || {};
+  const f = {};
+
+  const field = (label, node, hint) => el('label', { class: 'field' },
+    el('span', { class: 'field-label' }, label), node,
+    hint ? el('span', { class: 'field-hint' }, hint) : null);
+  const input = (val, ph) => el('input', { type: 'text', value: val || '', placeholder: ph || '', autocomplete: 'off', spellcheck: 'false' });
+
+  f.name = input(c.name, 'team-feishu');
+  f.type = el('select', null,
+    el('option', { value: 'feishu', selected: c.type !== 'telegram' }, 'feishu'),
+    el('option', { value: 'telegram', selected: c.type === 'telegram' }, 'telegram'));
+  f.webhook = input(fs.webhook, 'https://open.feishu.cn/open-apis/bot/v2/hook/…');
+  f.secret = input(fs.secret, 'signing secret (optional)');
+  f.cli_path = input(fs.cli_path, 'or path to a feishu CLI binary');
+  f.bot_token = input(tg.bot_token, '123456:ABC-…');
+  f.chat_id = input(tg.chat_id, '-1001234567890');
+  f.api_base = input(tg.api_base, 'https://api.telegram.org (override, optional)');
+
+  const feishuRows = [
+    field('webhook', f.webhook),
+    field('secret', f.secret),
+    field('cli_path', f.cli_path, 'provide a webhook or a cli_path'),
+  ];
+  const telegramRows = [
+    field('bot_token', f.bot_token),
+    field('chat_id', f.chat_id),
+    field('api_base', f.api_base),
+  ];
+
+  function syncType() {
+    const tgSel = f.type.value === 'telegram';
+    for (const r of feishuRows) r.hidden = tgSel;
+    for (const r of telegramRows) r.hidden = !tgSel;
+  }
+  f.type.addEventListener('change', syncType);
+
+  const err = el('div', { class: 'form-err', hidden: true });
+  const save = el('button', { type: 'submit', class: 'btn primary' }, editing ? 'save' : 'create');
+
+  async function onSubmit(ev) {
+    ev.preventDefault();
+    const type = f.type.value;
+    const payload = { name: f.name.value.trim(), type };
+    if (type === 'feishu') {
+      payload.feishu = { webhook: f.webhook.value.trim(), secret: f.secret.value.trim(), cli_path: f.cli_path.value.trim() };
+    } else {
+      payload.telegram = { bot_token: f.bot_token.value.trim(), chat_id: f.chat_id.value.trim(), api_base: f.api_base.value.trim() };
+    }
+    if (!payload.name) { err.textContent = 'name is required'; err.hidden = false; return; }
+    save.disabled = true;
+    err.hidden = true;
+    try {
+      const saved = editing ? await Channels.update(existing.name, payload) : await Channels.create(payload);
+      m.close();
+      toast(editing ? `Saved ${saved.name}` : `Created ${saved.name}`, 'ok');
+      if (onSaved) onSaved();
+    } catch (e) {
+      err.textContent = e.message;
+      err.hidden = false;
+      save.disabled = false;
+    }
+  }
+
+  const m = modal(el('div', { class: 'modal-card' },
+    el('h2', null, editing ? 'Edit channel' : 'New channel'),
+    el('form', { class: 'task-form', onsubmit: onSubmit },
+      field('name', f.name),
+      field('type', f.type),
+      ...feishuRows, ...telegramRows,
+      err,
+      el('div', { class: 'form-actions' },
+        el('button', { type: 'button', class: 'btn', onclick: () => m.close() }, 'cancel'),
+        save))));
+  syncType();
+  f.name.focus();
 }
 
 // ---------- router ----------
@@ -674,6 +836,7 @@ function renderDetail(root, name) {
     }
     kv('timeout', t.timeout && t.timeout !== '0s' ? t.timeout : 'none');
     kv('alert', t.alert || 'on_failure');
+    kv('notify channels', t.notifiers && t.notifiers.length ? t.notifiers.join(', ') : 'none');
     const env = t.env && Object.keys(t.env).length
       ? Object.entries(t.env).map(([k, v]) => `${k}=${v}`).join('\n') : '';
     kv('env', env);

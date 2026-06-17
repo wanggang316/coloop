@@ -109,15 +109,17 @@ func (e *Engine) commitLocked(next *model.Config) error {
 	}
 	e.cfg = next
 	e.schedule(next)
+	e.disp.SetChannels(next.NotifierChannels)
 	return nil
 }
 
-// cloneConfig copies cfg with independent Tasks and Runners slices, so an
-// in-progress edit never mutates a slice currently shared with readers
-// (ListTasks/findTask, runnerCmdTmpl).
+// cloneConfig copies cfg with independent Tasks, Runners and NotifierChannels
+// slices, so an in-progress edit never mutates a slice currently shared with
+// readers (ListTasks/findTask, runnerCmdTmpl, ListNotifiers).
 func cloneConfig(cfg *model.Config) *model.Config {
 	cp := *cfg
 	cp.Tasks = append([]model.Task(nil), cfg.Tasks...)
 	cp.Runners = append([]model.AgentRunner(nil), cfg.Runners...)
+	cp.NotifierChannels = append([]model.NotifierDef(nil), cfg.NotifierChannels...)
 	return &cp
 }

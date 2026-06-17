@@ -128,7 +128,8 @@ type Task struct {
 	Env        map[string]string `yaml:"env" json:"env"`                 // extra environment variables
 	Timeout    Duration          `yaml:"timeout" json:"timeout"`
 	Alert      AlertPolicy       `yaml:"alert" json:"alert"`
-	Enabled    *bool             `yaml:"enabled" json:"enabled"` // nil => enabled
+	Notifiers  []string          `yaml:"notifiers" json:"notifiers"` // names of notifier channels to alert (empty => none)
+	Enabled    *bool             `yaml:"enabled" json:"enabled"`     // nil => enabled
 }
 
 // IsEnabled defaults to true when unset.
@@ -177,7 +178,12 @@ type Config struct {
 	DataDir   string         `yaml:"data_dir"`  // base dir for runs/ (default: dir of config)
 	Tasks     []Task         `yaml:"tasks"`     // task definitions
 	Runners   []AgentRunner  `yaml:"runners"`   // reusable agent command templates, referenced by Task.Runner
-	Notifiers NotifierConfig `yaml:"notifiers"` // alert channel credentials
+
+	// NotifierChannels is the named alert-channel registry tasks select from via
+	// Task.Notifiers. Notifiers is the legacy single-channel block; on load it is
+	// migrated into NotifierChannels (named "feishu"/"telegram") and cleared.
+	NotifierChannels []NotifierDef  `yaml:"notifier_channels"`
+	Notifiers        NotifierConfig `yaml:"notifiers,omitempty"`
 
 	// Run-record retention (applied per task after each run finishes). Both
 	// default to off so existing installs never silently lose history.
@@ -185,22 +191,40 @@ type Config struct {
 	MaxRunAge Duration `yaml:"max_run_age"` // delete runs older than this, e.g. "720h" (0 = unlimited)
 }
 
-// NotifierConfig groups optional alert channel configuration.
+// NotifierType identifies a channel's delivery backend.
+type NotifierType string
+
+const (
+	NotifierFeishu   NotifierType = "feishu"
+	NotifierTelegram NotifierType = "telegram"
+)
+
+// NotifierDef is a named alert channel, selected by tasks via Task.Notifiers.
+// Exactly one of Feishu/Telegram is populated, matching Type.
+type NotifierDef struct {
+	Name     string          `yaml:"name" json:"name"`
+	Type     NotifierType    `yaml:"type" json:"type"`
+	Feishu   *FeishuConfig   `yaml:"feishu,omitempty" json:"feishu,omitempty"`
+	Telegram *TelegramConfig `yaml:"telegram,omitempty" json:"telegram,omitempty"`
+}
+
+// NotifierConfig groups optional alert channel configuration (legacy; migrated
+// into Config.NotifierChannels on load).
 type NotifierConfig struct {
-	Feishu   *FeishuConfig   `yaml:"feishu"`
-	Telegram *TelegramConfig `yaml:"telegram"`
+	Feishu   *FeishuConfig   `yaml:"feishu,omitempty"`
+	Telegram *TelegramConfig `yaml:"telegram,omitempty"`
 }
 
 // FeishuConfig configures the Feishu notifier (webhook or CLI).
 type FeishuConfig struct {
-	Webhook string `yaml:"webhook"`  // custom bot webhook URL
-	CLIPath string `yaml:"cli_path"` // path to a feishu CLI binary (alternative)
-	Secret  string `yaml:"secret"`   // webhook signing secret (optional)
+	Webhook string `yaml:"webhook" json:"webhook"`   // custom bot webhook URL
+	CLIPath string `yaml:"cli_path" json:"cli_path"` // path to a feishu CLI binary (alternative)
+	Secret  string `yaml:"secret" json:"secret"`     // webhook signing secret (optional)
 }
 
 // TelegramConfig configures the Telegram bot notifier.
 type TelegramConfig struct {
-	BotToken string `yaml:"bot_token"`
-	ChatID   string `yaml:"chat_id"`
-	APIBase  string `yaml:"api_base"` // override for testing; default https://api.telegram.org
+	BotToken string `yaml:"bot_token" json:"bot_token"`
+	ChatID   string `yaml:"chat_id" json:"chat_id"`
+	APIBase  string `yaml:"api_base" json:"api_base"` // override for testing; default https://api.telegram.org
 }

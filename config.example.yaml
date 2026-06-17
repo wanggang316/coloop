@@ -31,16 +31,26 @@ runners:
     # so the agent can actually run its tools without an interactive prompt.
     cmd_tmpl: 'claude -p "{{.Prompt}}" --output-format stream-json --verbose --permission-mode acceptEdits'
 
-# Optional alert channels. Omit a block to disable that channel.
-notifiers:
-  feishu:
-    webhook: ""        # custom bot webhook URL
-    secret: ""         # webhook signing secret (optional)
-    # cli_path: ""     # alternatively, path to a feishu CLI binary
-  telegram:
-    bot_token: ""
-    chat_id: ""
-    # api_base: "https://api.telegram.org"   # override (e.g. for testing)
+# Named alert channels. Define a channel once here, then list its name under a
+# task's `notifiers:` to send that task's alerts there. A task with no
+# `notifiers` alerts nobody (the `alert:` policy only decides whether to alert;
+# `notifiers` decides where).
+#
+# The older single-channel `notifiers: {feishu: …, telegram: …}` block is still
+# accepted: on load it is migrated into named channels "feishu"/"telegram".
+notifier_channels:
+  - name: team-feishu
+    type: feishu
+    feishu:
+      webhook: ""        # custom bot webhook URL
+      secret: ""         # webhook signing secret (optional)
+      # cli_path: ""     # alternatively, path to a feishu CLI binary
+  - name: my-telegram
+    type: telegram
+    telegram:
+      bot_token: ""
+      chat_id: ""
+      # api_base: "https://api.telegram.org"   # override (e.g. for testing)
 
 tasks:
   # A scheduled local script.
@@ -53,6 +63,7 @@ tasks:
       ENV: prod
     timeout: 1h                  # parsed durations like 30s/10m/1h; default 1h
     alert: on_failure            # on_failure | on_success | always | never
+    notifiers: [team-feishu]     # which channel(s) get this task's alerts
 
   # Invoke an agent. Pick a runner (defined above) instead of inlining the
   # command line; the runner's cmd_tmpl is rendered with this task's prompt.
@@ -63,6 +74,7 @@ tasks:
     runner: claude-stream
     prompt: Inspect today's alert logs and summarize action items.
     alert: always
+    notifiers: [team-feishu, my-telegram]
 
   # A manual-only task (no cron); trigger from the UI or `the-loop run hello`.
   - name: hello

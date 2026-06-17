@@ -339,6 +339,7 @@ label.toggle input { accent-color: var(--accent); }
 .task-form textarea:focus { outline: none; border-color: var(--accent); }
 .field-check { display: flex; align-items: center; gap: 8px; font-size: 13px; color: var(--fg-dim); }
 .field-check input { width: auto; }
+.check-grid { display: flex; flex-wrap: wrap; gap: 8px 18px; }
 .form-err {
   color: #ffb3ae;
   background: rgba(248,81,73,.1);

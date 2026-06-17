@@ -7,11 +7,13 @@ package engine
 
 import "github.com/wanggang316/the-loop/internal/model"
 
-// ListRunners returns a copy of the configured agent runners.
+// ListRunners returns a copy of the configured agent runners. The result is
+// always non-nil so the JSON API emits [] rather than null for an empty list.
 func (e *Engine) ListRunners() []model.AgentRunner {
 	e.cfgMu.RLock()
 	defer e.cfgMu.RUnlock()
-	return append([]model.AgentRunner(nil), e.cfg.Runners...)
+	out := make([]model.AgentRunner, 0, len(e.cfg.Runners))
+	return append(out, e.cfg.Runners...)
 }
 
 // CreateRunner adds r, persists the config. The name must be free.
@@ -72,6 +74,78 @@ func (e *Engine) DeleteRunner(name string) error {
 func (e *Engine) runnerIndexLocked(name string) int {
 	for i := range e.cfg.Runners {
 		if e.cfg.Runners[i].Name == name {
+			return i
+		}
+	}
+	return -1
+}
+
+// ListNotifiers returns a copy of the configured notifier channels. The result
+// is always non-nil so the JSON API emits [] rather than null for an empty list.
+func (e *Engine) ListNotifiers() []model.NotifierDef {
+	e.cfgMu.RLock()
+	defer e.cfgMu.RUnlock()
+	out := make([]model.NotifierDef, 0, len(e.cfg.NotifierChannels))
+	return append(out, e.cfg.NotifierChannels...)
+}
+
+// CreateNotifier adds c, persists the config. The name must be free.
+func (e *Engine) CreateNotifier(c model.NotifierDef) (model.NotifierDef, error) {
+	e.cfgMu.Lock()
+	defer e.cfgMu.Unlock()
+
+	if e.notifierIndexLocked(c.Name) >= 0 {
+		return model.NotifierDef{}, ErrDuplicate
+	}
+	next := cloneConfig(e.cfg)
+	next.NotifierChannels = append(next.NotifierChannels, c)
+	if err := e.commitLocked(next); err != nil {
+		return model.NotifierDef{}, err
+	}
+	return e.cfg.NotifierChannels[len(e.cfg.NotifierChannels)-1], nil
+}
+
+// UpdateNotifier replaces the channel named name with c. If c.Name differs the
+// channel is renamed and the new name must be free. Validation rejects a rename
+// that would leave a task pointing at a missing channel.
+func (e *Engine) UpdateNotifier(name string, c model.NotifierDef) (model.NotifierDef, error) {
+	e.cfgMu.Lock()
+	defer e.cfgMu.Unlock()
+
+	i := e.notifierIndexLocked(name)
+	if i < 0 {
+		return model.NotifierDef{}, ErrNotFound
+	}
+	if c.Name != name && e.notifierIndexLocked(c.Name) >= 0 {
+		return model.NotifierDef{}, ErrDuplicate
+	}
+	next := cloneConfig(e.cfg)
+	next.NotifierChannels[i] = c
+	if err := e.commitLocked(next); err != nil {
+		return model.NotifierDef{}, err
+	}
+	return e.cfg.NotifierChannels[i], nil
+}
+
+// DeleteNotifier removes the named channel. Validation rejects the deletion
+// while any task still references it.
+func (e *Engine) DeleteNotifier(name string) error {
+	e.cfgMu.Lock()
+	defer e.cfgMu.Unlock()
+
+	i := e.notifierIndexLocked(name)
+	if i < 0 {
+		return ErrNotFound
+	}
+	next := cloneConfig(e.cfg)
+	next.NotifierChannels = append(next.NotifierChannels[:i], next.NotifierChannels[i+1:]...)
+	return e.commitLocked(next)
+}
+
+// notifierIndexLocked returns the index of the channel named name, or -1. Caller holds cfgMu.
+func (e *Engine) notifierIndexLocked(name string) int {
+	for i := range e.cfg.NotifierChannels {
+		if e.cfg.NotifierChannels[i].Name == name {
 			return i
 		}
 	}

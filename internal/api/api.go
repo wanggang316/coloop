@@ -39,6 +39,10 @@ func New(e *engine.Engine, ui fs.FS, reload func() error) http.Handler {
 	mux.HandleFunc("POST /api/runners", s.createRunner)
 	mux.HandleFunc("PUT /api/runners/{name}", s.updateRunner)
 	mux.HandleFunc("DELETE /api/runners/{name}", s.deleteRunner)
+	mux.HandleFunc("GET /api/notifiers", s.listNotifiers)
+	mux.HandleFunc("POST /api/notifiers", s.createNotifier)
+	mux.HandleFunc("PUT /api/notifiers/{name}", s.updateNotifier)
+	mux.HandleFunc("DELETE /api/notifiers/{name}", s.deleteNotifier)
 	mux.HandleFunc("POST /api/reload", s.reloadConfig)
 
 	// Catch-all: serve the SPA (with route fallback to index.html).
@@ -148,6 +152,44 @@ func (s *server) updateRunner(w http.ResponseWriter, r *http.Request) {
 
 func (s *server) deleteRunner(w http.ResponseWriter, r *http.Request) {
 	if err := s.eng.DeleteRunner(r.PathValue("name")); err != nil {
+		writeTaskErr(w, err)
+		return
+	}
+	w.WriteHeader(http.StatusNoContent)
+}
+
+func (s *server) listNotifiers(w http.ResponseWriter, _ *http.Request) {
+	writeJSON(w, http.StatusOK, s.eng.ListNotifiers())
+}
+
+func (s *server) createNotifier(w http.ResponseWriter, r *http.Request) {
+	var c model.NotifierDef
+	if !decodeJSON(w, r, &c) {
+		return
+	}
+	created, err := s.eng.CreateNotifier(c)
+	if err != nil {
+		writeTaskErr(w, err)
+		return
+	}
+	writeJSON(w, http.StatusCreated, created)
+}
+
+func (s *server) updateNotifier(w http.ResponseWriter, r *http.Request) {
+	var c model.NotifierDef
+	if !decodeJSON(w, r, &c) {
+		return
+	}
+	updated, err := s.eng.UpdateNotifier(r.PathValue("name"), c)
+	if err != nil {
+		writeTaskErr(w, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, updated)
+}
+
+func (s *server) deleteNotifier(w http.ResponseWriter, r *http.Request) {
+	if err := s.eng.DeleteNotifier(r.PathValue("name")); err != nil {
 		writeTaskErr(w, err)
 		return
 	}

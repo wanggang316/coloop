@@ -19,7 +19,7 @@ func newTestEngine(t *testing.T, cfg *model.Config, exec executor.Executor) (*En
 	if err != nil {
 		t.Fatalf("store.New: %v", err)
 	}
-	disp := notify.NewDispatcher(model.NotifierConfig{}) // no channels: dispatch is a no-op
+	disp := notify.NewDispatcher(nil) // no channels: dispatch is a no-op
 	e := New(cfg, st, disp, exec, exec)
 	return e, st
 }

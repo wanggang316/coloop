@@ -179,12 +179,23 @@ notifiers:
 	if cfg.Tasks[0].WorkingDir != wantWork {
 		t.Errorf("WorkingDir = %q, want %q", cfg.Tasks[0].WorkingDir, wantWork)
 	}
-	if cfg.Notifiers.Feishu == nil {
-		t.Fatal("Feishu config is nil")
+	// The legacy notifiers block is migrated into NotifierChannels as "feishu",
+	// and its cli_path is home-expanded there.
+	if cfg.Notifiers.Feishu != nil {
+		t.Errorf("legacy Notifiers.Feishu should be cleared after migration, got %+v", cfg.Notifiers.Feishu)
+	}
+	var feishu *model.FeishuConfig
+	for i := range cfg.NotifierChannels {
+		if cfg.NotifierChannels[i].Name == "feishu" {
+			feishu = cfg.NotifierChannels[i].Feishu
+		}
+	}
+	if feishu == nil {
+		t.Fatal("migrated feishu channel is missing")
 	}
 	wantCLI := filepath.Join(home, "bin", "feishu")
-	if cfg.Notifiers.Feishu.CLIPath != wantCLI {
-		t.Errorf("Feishu.CLIPath = %q, want %q", cfg.Notifiers.Feishu.CLIPath, wantCLI)
+	if feishu.CLIPath != wantCLI {
+		t.Errorf("feishu.CLIPath = %q, want %q", feishu.CLIPath, wantCLI)
 	}
 }
 

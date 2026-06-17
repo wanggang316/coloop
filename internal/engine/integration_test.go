@@ -66,14 +66,20 @@ func buildIntegrationEngine(t *testing.T, cfg *model.Config, apiBase string) *En
 		t.Fatalf("store.New: %v", err)
 	}
 
-	cfg.Notifiers = model.NotifierConfig{
+	cfg.NotifierChannels = []model.NotifierDef{{
+		Name: "tg",
+		Type: model.NotifierTelegram,
 		Telegram: &model.TelegramConfig{
 			BotToken: "test-token",
 			ChatID:   "123",
 			APIBase:  apiBase,
 		},
+	}}
+	// Per-task routing: every task in these tests alerts to the one channel.
+	for i := range cfg.Tasks {
+		cfg.Tasks[i].Notifiers = []string{"tg"}
 	}
-	disp := notify.NewDispatcher(cfg.Notifiers)
+	disp := notify.NewDispatcher(cfg.NotifierChannels)
 
 	shellExec := executor.NewShell(cfg.Shell)
 	agentExec := executor.NewAgent(cfg.Shell)

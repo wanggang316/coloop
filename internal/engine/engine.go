@@ -61,6 +61,7 @@ type Engine struct {
 // New builds an Engine. The cron scheduler is created but not started; call
 // Start to schedule the enabled tasks.
 func New(cfg *model.Config, st store.Store, disp *notify.Dispatcher, shellExec, agentExec executor.Executor) *Engine {
+	disp.SetChannels(cfg.NotifierChannels)
 	return &Engine{
 		store:     st,
 		disp:      disp,
@@ -140,11 +141,13 @@ func (e *Engine) Stop(ctx context.Context) error {
 	}
 }
 
-// Reload swaps the active configuration under lock and reschedules cron entries.
+// Reload swaps the active configuration under lock, reschedules cron entries and
+// rebuilds the notifier channels so config edits take effect immediately.
 func (e *Engine) Reload(cfg *model.Config) error {
 	e.cfgMu.Lock()
 	e.cfg = cfg
 	e.schedule(cfg)
+	e.disp.SetChannels(cfg.NotifierChannels)
 	e.cfgMu.Unlock()
 	return nil
 }

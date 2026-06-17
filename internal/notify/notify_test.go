@@ -261,10 +261,14 @@ func (r *recordingNotifier) Notify(ctx context.Context, ev model.Event) error {
 
 func (r *recordingNotifier) Count() int { return int(atomic.LoadInt32(&r.calls)) }
 
-// newTestDispatcher builds a Dispatcher with arbitrary notifiers, bypassing
-// NewDispatcher's config-driven construction.
+// newTestDispatcher builds a Dispatcher with arbitrary notifiers keyed by their
+// Name(), bypassing NewDispatcher's config-driven construction.
 func newTestDispatcher(notifiers ...Notifier) *Dispatcher {
-	return &Dispatcher{notifiers: notifiers}
+	m := make(map[string]Notifier, len(notifiers))
+	for _, n := range notifiers {
+		m[n.Name()] = n
+	}
+	return &Dispatcher{notifiers: m}
 }
 
 func TestDispatchFiresOnlyWhenPolicyMatches(t *testing.T) {
@@ -289,6 +293,7 @@ func TestDispatchFiresOnlyWhenPolicyMatches(t *testing.T) {
 			ev := sampleEvent()
 			ev.Task.Alert = tt.policy
 			ev.Run.Status = tt.status
+			ev.Task.Notifiers = d.Names()
 
 			d.Dispatch(context.Background(), ev)
 
@@ -307,6 +312,7 @@ func TestDispatchSurvivesFailingNotifier(t *testing.T) {
 	ev := sampleEvent()
 	ev.Task.Alert = model.AlertAlways
 	ev.Run.Status = model.StatusFailed
+	ev.Task.Notifiers = d.Names()
 
 	// Must not panic and must not propagate any error (no return value).
 	d.Dispatch(context.Background(), ev)
@@ -374,6 +380,7 @@ func runSecretLeakCase(t *testing.T, fd failingDelivery) {
 		defer srv.Close()
 
 		d := newTestDispatcher(fd.newNotifier(srv.URL))
+		ev.Task.Notifiers = d.Names()
 		out := captureLog(t, func() { d.Dispatch(context.Background(), ev) })
 
 		if out == "" {
@@ -393,6 +400,7 @@ func runSecretLeakCase(t *testing.T, fd failingDelivery) {
 		srv.Close()
 
 		d := newTestDispatcher(fd.newNotifier(base))
+		ev.Task.Notifiers = d.Names()
 		out := captureLog(t, func() { d.Dispatch(context.Background(), ev) })
 
 		if out == "" {
@@ -449,6 +457,7 @@ func TestFeishuSecretNotLogged(t *testing.T) {
 		srv.Close() // force a transport error carrying the full URL
 
 		d := newTestDispatcher(NewFeishuNotifier(&model.FeishuConfig{Webhook: webhook}))
+		ev.Task.Notifiers = d.Names()
 		out := captureLog(t, func() { d.Dispatch(context.Background(), ev) })
 
 		if out == "" {

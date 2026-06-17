@@ -76,3 +76,54 @@ func TestRunnerEditRequiresConfigPath(t *testing.T) {
 		t.Fatalf("CreateRunner without config path err = %v, want ErrReadOnly", err)
 	}
 }
+
+func tgChannel(name string) model.NotifierDef {
+	return model.NotifierDef{
+		Name:     name,
+		Type:     model.NotifierTelegram,
+		Telegram: &model.TelegramConfig{BotToken: "tok", ChatID: "42"},
+	}
+}
+
+func TestNotifierCRUD(t *testing.T) {
+	e := newEditableEngine(t, &model.Config{})
+
+	if _, err := e.CreateNotifier(tgChannel("tg")); err != nil {
+		t.Fatalf("CreateNotifier: %v", err)
+	}
+	if list := e.ListNotifiers(); len(list) != 1 || list[0].Name != "tg" {
+		t.Fatalf("ListNotifiers = %+v, want one named tg", list)
+	}
+
+	// Duplicate name is rejected.
+	if _, err := e.CreateNotifier(tgChannel("tg")); !errors.Is(err, ErrDuplicate) {
+		t.Fatalf("duplicate CreateNotifier err = %v, want ErrDuplicate", err)
+	}
+
+	// Invalid channel (telegram missing chat_id) is rejected by validation.
+	bad := model.NotifierDef{Name: "broken", Type: model.NotifierTelegram, Telegram: &model.TelegramConfig{BotToken: "x"}}
+	if _, err := e.CreateNotifier(bad); !errors.Is(err, ErrInvalid) {
+		t.Fatalf("invalid CreateNotifier err = %v, want ErrInvalid", err)
+	}
+
+	if err := e.DeleteNotifier("tg"); err != nil {
+		t.Fatalf("DeleteNotifier: %v", err)
+	}
+	if list := e.ListNotifiers(); len(list) != 0 {
+		t.Fatalf("ListNotifiers after delete = %+v, want empty", list)
+	}
+}
+
+func TestDeleteNotifierInUseRejected(t *testing.T) {
+	e := newEditableEngine(t, &model.Config{
+		NotifierChannels: []model.NotifierDef{tgChannel("tg")},
+		Tasks:            []model.Task{{Name: "job", Type: model.TaskShell, Command: "echo hi", Notifiers: []string{"tg"}}},
+	})
+
+	if err := e.DeleteNotifier("tg"); !errors.Is(err, ErrInvalid) {
+		t.Fatalf("DeleteNotifier in use err = %v, want ErrInvalid", err)
+	}
+	if list := e.ListNotifiers(); len(list) != 1 {
+		t.Fatalf("channel was removed despite rejection: %+v", list)
+	}
+}

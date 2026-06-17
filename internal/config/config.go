@@ -72,9 +72,37 @@ func applyDefaults(cfg *model.Config, path string) {
 		}
 	}
 
-	if cfg.Notifiers.Feishu != nil {
-		cfg.Notifiers.Feishu.CLIPath = expandHome(cfg.Notifiers.Feishu.CLIPath)
+	migrateLegacyNotifiers(cfg)
+	for i := range cfg.NotifierChannels {
+		if f := cfg.NotifierChannels[i].Feishu; f != nil {
+			f.CLIPath = expandHome(f.CLIPath)
+		}
 	}
+}
+
+// migrateLegacyNotifiers folds the legacy single-channel `notifiers` block into
+// the named NotifierChannels registry (as "feishu"/"telegram") and clears it, so
+// the rest of the daemon only deals with named channels. Migration is skipped
+// for a channel whose name is already taken, and is idempotent.
+func migrateLegacyNotifiers(cfg *model.Config) {
+	taken := make(map[string]struct{}, len(cfg.NotifierChannels))
+	for i := range cfg.NotifierChannels {
+		taken[cfg.NotifierChannels[i].Name] = struct{}{}
+	}
+	add := func(name string, def model.NotifierDef) {
+		if _, dup := taken[name]; dup {
+			return
+		}
+		cfg.NotifierChannels = append(cfg.NotifierChannels, def)
+		taken[name] = struct{}{}
+	}
+	if f := cfg.Notifiers.Feishu; f != nil {
+		add("feishu", model.NotifierDef{Name: "feishu", Type: model.NotifierFeishu, Feishu: f})
+	}
+	if tg := cfg.Notifiers.Telegram; tg != nil {
+		add("telegram", model.NotifierDef{Name: "telegram", Type: model.NotifierTelegram, Telegram: tg})
+	}
+	cfg.Notifiers = model.NotifierConfig{}
 }
 
 // expandHome rewrites a bare "~" or a leading "~/" to the current user's home
@@ -116,6 +144,38 @@ func Validate(cfg *model.Config) error {
 		}
 		if strings.TrimSpace(r.CmdTmpl) == "" {
 			errs = append(errs, fmt.Errorf("runner %q: cmd_tmpl is required", label))
+		}
+	}
+
+	// Validate the notifier-channel registry and collect its names for task
+	// reference checks below.
+	channels := make(map[string]struct{}, len(cfg.NotifierChannels))
+	for i := range cfg.NotifierChannels {
+		c := &cfg.NotifierChannels[i]
+		label := c.Name
+		if label == "" {
+			label = fmt.Sprintf("notifier_channels[%d]", i)
+		}
+		if strings.TrimSpace(c.Name) == "" {
+			errs = append(errs, fmt.Errorf("%s: name is required", label))
+		} else if _, dup := channels[c.Name]; dup {
+			errs = append(errs, fmt.Errorf("channel %q: duplicate name", c.Name))
+		} else {
+			channels[c.Name] = struct{}{}
+		}
+		switch c.Type {
+		case model.NotifierFeishu:
+			if c.Feishu == nil || (strings.TrimSpace(c.Feishu.Webhook) == "" && strings.TrimSpace(c.Feishu.CLIPath) == "") {
+				errs = append(errs, fmt.Errorf("channel %q: feishu requires a webhook or cli_path", label))
+			}
+		case model.NotifierTelegram:
+			if c.Telegram == nil || strings.TrimSpace(c.Telegram.BotToken) == "" || strings.TrimSpace(c.Telegram.ChatID) == "" {
+				errs = append(errs, fmt.Errorf("channel %q: telegram requires bot_token and chat_id", label))
+			}
+		case "":
+			errs = append(errs, fmt.Errorf("channel %q: type is required (feishu or telegram)", label))
+		default:
+			errs = append(errs, fmt.Errorf("channel %q: invalid type %q (want feishu or telegram)", label, c.Type))
 		}
 	}
 
@@ -170,6 +230,12 @@ func Validate(cfg *model.Config) error {
 		case "", model.AlertOnFailure, model.AlertOnSuccess, model.AlertAlways, model.AlertNever:
 		default:
 			errs = append(errs, fmt.Errorf("task %q: invalid alert %q (want on_failure, on_success, always or never)", label, t.Alert))
+		}
+
+		for _, ch := range t.Notifiers {
+			if _, ok := channels[ch]; !ok {
+				errs = append(errs, fmt.Errorf("task %q: unknown notifier channel %q", label, ch))
+			}
 		}
 	}
 
