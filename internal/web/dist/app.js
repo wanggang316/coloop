@@ -379,20 +379,38 @@ function renderRunnersTab(container) {
     clear(slot);
     slot.append(loadingState());
     try {
-      const runners = (await Runners.list()) || [];
+      const [runnersRaw, presetsRaw] = await Promise.all([Runners.list(), Runners.presets()]);
+      const runners = runnersRaw || [];
+      const presets = presetsRaw || [];
       clear(slot);
-      if (!runners.length) {
-        slot.append(emptyState('No runners yet', 'Add one to use it in agent tasks.'));
-        return;
+
+      // The user's own runners (empty state when none).
+      if (runners.length) {
+        const rows = runners.map((r) => el('div', { class: 'reg-row' },
+          el('div', { class: 'reg-main' },
+            el('div', { class: 'reg-name' }, r.name),
+            el('div', { class: 'reg-sub mono' }, r.cmd_tmpl)),
+          el('div', { class: 'reg-actions' },
+            el('button', { class: 'btn sm', onclick: () => openRunnerForm(r, reload) }, 'edit'),
+            el('button', { class: 'btn sm danger', onclick: () => askDelete(r) }, 'delete'))));
+        slot.append(el('div', { class: 'reg-list' }, rows));
+      } else {
+        slot.append(emptyState('No runners yet', 'Start from a built-in template below, or add your own.'));
       }
-      const rows = runners.map((r) => el('div', { class: 'reg-row' },
-        el('div', { class: 'reg-main' },
-          el('div', { class: 'reg-name' }, r.name),
-          el('div', { class: 'reg-sub mono' }, r.cmd_tmpl)),
-        el('div', { class: 'reg-actions' },
-          el('button', { class: 'btn sm', onclick: () => openRunnerForm(r, reload) }, 'edit'),
-          el('button', { class: 'btn sm danger', onclick: () => askDelete(r) }, 'delete'))));
-      slot.append(el('div', { class: 'reg-list' }, rows));
+
+      // Built-in templates — always visible so they are discoverable; "use"
+      // opens the editor pre-filled with the template to edit and save.
+      if (presets.length) {
+        const presetRows = presets.map((p) => el('div', { class: 'reg-row' },
+          el('div', { class: 'reg-main' },
+            el('div', { class: 'reg-name' }, p.label, ' ', el('span', { class: 'tag' }, 'built-in')),
+            el('div', { class: 'reg-sub mono' }, p.cmd_tmpl)),
+          el('div', { class: 'reg-actions' },
+            el('button', { class: 'btn sm', onclick: () => openRunnerForm(null, reload, p.name) }, 'use'))));
+        slot.append(
+          el('div', { class: 'settings-subhead' }, 'Built-in templates'),
+          el('div', { class: 'reg-list' }, presetRows));
+      }
     } catch (e) {
       clear(slot);
       slot.append(errorState(e.message, reload));
@@ -409,8 +427,8 @@ function renderRunnersTab(container) {
 
 // openRunnerForm shows a small create / edit form for a single runner. It loads
 // the built-in presets so a new runner can start from a Claude Code / Codex
-// template and then be edited.
-async function openRunnerForm(existing, onSaved) {
+// template and then be edited. startName, when given, pre-selects that preset.
+async function openRunnerForm(existing, onSaved, startName) {
   const editing = !!existing;
   const r = existing || {};
   let presets = [];
@@ -431,15 +449,21 @@ async function openRunnerForm(existing, onSaved) {
   const preset = el('select', null,
     el('option', { value: '', selected: true }, '— blank —'),
     ...presets.map((p, i) => el('option', { value: String(i) }, p.label)));
-  preset.addEventListener('change', () => {
-    const p = presets[Number(preset.value)];
+  const applyPreset = (p) => {
     if (!p) return;
     cmd.value = p.cmd_tmpl;
     if (!name.value.trim()) name.value = p.name;
     presetHint.textContent = p.description || presetHint.textContent;
-  });
+  };
+  preset.addEventListener('change', () => applyPreset(presets[Number(preset.value)]));
   const presetRow = presets.length ? field('start from', preset, '') : null;
   if (presetRow) presetRow.append(presetHint);
+
+  // Pre-select a preset when opened from a "use" button on a template.
+  if (!editing && startName) {
+    const i = presets.findIndex((p) => p.name === startName);
+    if (i >= 0) { preset.value = String(i); applyPreset(presets[i]); }
+  }
 
   async function onSubmit(ev) {
     ev.preventDefault();

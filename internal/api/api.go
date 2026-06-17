@@ -336,6 +336,14 @@ func (s *server) serveFile(w http.ResponseWriter, r *http.Request, name string) 
 	if err != nil || info.IsDir() {
 		return false
 	}
+	// The SPA assets are embedded in the binary, so they only change on a
+	// binary upgrade — but embed.FS reports a zero ModTime, leaving the response
+	// with no validator. Without this, browsers cache the assets heuristically
+	// and keep serving a stale app.js after an upgrade. no-cache forces a
+	// revalidate (effectively a refetch here) on every load, which is cheap for
+	// a handful of small local files.
+	w.Header().Set("Cache-Control", "no-cache")
+
 	rs, ok := f.(io.ReadSeeker)
 	if !ok {
 		// Embedded FS files implement io.ReadSeeker; this guards exotic FS impls.
