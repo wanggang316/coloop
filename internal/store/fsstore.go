@@ -344,3 +344,81 @@ func writeMeta(path string, run model.Run) error {
 	}
 	return nil
 }
+
+// Prune enforces retention for a task: it keeps the newest `keep` runs (when
+// keep > 0) and removes runs whose StartedAt is older than `maxAge` (when
+// maxAge > 0). A run is removed only if it is terminal, so an in-flight run is
+// never deleted out from under the engine. The per-task single-flight guarantee
+// means Prune for a given task never races another run of that task, so no
+// extra locking is needed here (RemoveAll of old run dirs cannot affect the
+// max-id scan, which only ever reads the highest id).
+func (s *FSStore) Prune(taskName string, keep int, maxAge time.Duration) (int, error) {
+	if err := validTaskName(taskName); err != nil {
+		return 0, err
+	}
+	if keep <= 0 && maxAge <= 0 {
+		return 0, nil
+	}
+
+	runs, err := s.List(taskName, 0) // newest first
+	if err != nil {
+		return 0, err
+	}
+
+	var cutoff time.Time
+	if maxAge > 0 {
+		cutoff = time.Now().Add(-maxAge)
+	}
+
+	removed := 0
+	survivors := make([]model.Run, 0, len(runs))
+	for i, r := range runs {
+		overCount := keep > 0 && i >= keep
+		tooOld := maxAge > 0 && r.StartedAt.Before(cutoff)
+		if r.Status.Terminal() && (overCount || tooOld) {
+			if err := os.RemoveAll(s.runDir(taskName, r.ID)); err == nil {
+				removed++
+				continue
+			}
+			// On removal failure, keep it as a survivor rather than losing track.
+		}
+		survivors = append(survivors, r)
+	}
+
+	if removed > 0 {
+		s.rewriteHistory(taskName, survivors)
+	}
+	return removed, nil
+}
+
+// rewriteHistory replaces history.jsonl with the survivors' summary lines,
+// oldest-first to match the append order Finish uses. Best-effort: the index is
+// a convenience, not a source of truth (List reads run dirs directly).
+func (s *FSStore) rewriteHistory(taskName string, survivors []model.Run) {
+	var buf bytes.Buffer
+	for i := len(survivors) - 1; i >= 0; i-- { // survivors are newest-first
+		line, err := json.Marshal(survivors[i])
+		if err != nil {
+			continue
+		}
+		buf.Write(line)
+		buf.WriteByte('\n')
+	}
+
+	dir := s.runsDir(taskName)
+	tmp, err := os.CreateTemp(dir, "history-*.tmp")
+	if err != nil {
+		return
+	}
+	tmpName := tmp.Name()
+	if _, err := tmp.Write(buf.Bytes()); err != nil {
+		tmp.Close()
+		os.Remove(tmpName)
+		return
+	}
+	if err := tmp.Close(); err != nil {
+		os.Remove(tmpName)
+		return
+	}
+	_ = os.Rename(tmpName, filepath.Join(dir, "history.jsonl"))
+}

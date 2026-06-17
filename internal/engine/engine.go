@@ -199,6 +199,14 @@ func (e *Engine) execute(task model.Task, run model.Run, b *broadcaster) {
 		_ = err
 	}
 
+	// Enforce run-record retention (best-effort; must not affect the outcome).
+	e.cfgMu.RLock()
+	keep, maxAge := e.cfg.MaxRuns, e.cfg.MaxRunAge.Std()
+	e.cfgMu.RUnlock()
+	if keep > 0 || maxAge > 0 {
+		_, _ = e.store.Prune(task.Name, keep, maxAge)
+	}
+
 	// Build the notification event from the freshest run record available.
 	finished, err := e.store.Get(task.Name, run.ID)
 	if err != nil {

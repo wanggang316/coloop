@@ -167,6 +167,11 @@ type Config struct {
 	DataDir   string         `yaml:"data_dir"`  // base dir for runs/ (default: dir of config)
 	Tasks     []Task         `yaml:"tasks"`     // task definitions
 	Notifiers NotifierConfig `yaml:"notifiers"` // alert channel credentials
+
+	// Run-record retention (applied per task after each run finishes). Both
+	// default to off so existing installs never silently lose history.
+	MaxRuns   int      `yaml:"max_runs"`    // keep only the newest N runs per task (0 = unlimited)
+	MaxRunAge Duration `yaml:"max_run_age"` // delete runs older than this, e.g. "720h" (0 = unlimited)
 }
 
 // NotifierConfig groups optional alert channel configuration.

@@ -5,6 +5,7 @@ package store
 
 import (
 	"io"
+	"time"
 
 	"github.com/wanggang316/the-loop/internal/model"
 )
@@ -35,4 +36,10 @@ type Store interface {
 
 	// Tail returns up to n trailing lines of the run's log.
 	Tail(taskName string, runID int64, n int) (string, error)
+
+	// Prune deletes a task's terminal run records to enforce retention: it keeps
+	// at most the newest `keep` runs (when keep > 0) and deletes runs older than
+	// `maxAge` (when maxAge > 0). In-flight (non-terminal) runs are never deleted.
+	// It returns the number of runs removed. A keep<=0 and maxAge<=0 is a no-op.
+	Prune(taskName string, keep int, maxAge time.Duration) (int, error)
 }

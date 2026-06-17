@@ -15,6 +15,12 @@ shell: /bin/sh
 # Layout: <data_dir>/runs/<task>/<id>/{meta.json,output.log}
 data_dir: ~/.the-loop
 
+# Run-record retention. After each run finishes, that task's old runs are pruned
+# from disk. Both default to off (keep everything) so upgrades never silently
+# drop history; set either or both. In-flight runs are never deleted.
+max_runs: 50            # keep only the newest N runs per task (0 = unlimited)
+# max_run_age: 720h     # also delete runs older than this duration (e.g. 30 days)
+
 # Optional alert channels. Omit a block to disable that channel.
 notifiers:
   feishu:

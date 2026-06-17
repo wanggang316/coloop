@@ -10,6 +10,7 @@ import (
 	"strings"
 	"sync"
 	"testing"
+	"time"
 
 	"github.com/wanggang316/the-loop/internal/model"
 )
@@ -531,4 +532,104 @@ func quote(s string) string {
 		return "empty"
 	}
 	return strconv.Quote(s)
+}
+
+// finishRun creates and finishes a successful run, returning its id.
+func finishRun(t *testing.T, s *FSStore, task string) int64 {
+	t.Helper()
+	r, err := s.Create(task, model.TriggerManual)
+	if err != nil {
+		t.Fatalf("Create: %v", err)
+	}
+	if err := s.Finish(task, r.ID, model.StatusSuccess, 0); err != nil {
+		t.Fatalf("Finish: %v", err)
+	}
+	return r.ID
+}
+
+// TestPruneByCount keeps only the newest N runs.
+func TestPruneByCount(t *testing.T) {
+	s := newStore(t)
+	const task = "ret"
+	for i := 0; i < 5; i++ {
+		finishRun(t, s, task)
+	}
+
+	removed, err := s.Prune(task, 3, 0)
+	if err != nil {
+		t.Fatalf("Prune: %v", err)
+	}
+	if removed != 2 {
+		t.Fatalf("removed = %d, want 2", removed)
+	}
+	runs, err := s.List(task, 0)
+	if err != nil {
+		t.Fatalf("List: %v", err)
+	}
+	if len(runs) != 3 {
+		t.Fatalf("len(runs) = %d, want 3", len(runs))
+	}
+	for i, want := range []int64{5, 4, 3} { // newest first
+		if runs[i].ID != want {
+			t.Errorf("runs[%d].ID = %d, want %d", i, runs[i].ID, want)
+		}
+	}
+}
+
+// TestPruneByAge deletes runs older than maxAge and keeps recent ones.
+func TestPruneByAge(t *testing.T) {
+	s := newStore(t)
+	const task = "aged"
+
+	oldID := finishRun(t, s, task)
+	old, err := s.Get(task, oldID)
+	if err != nil {
+		t.Fatalf("Get: %v", err)
+	}
+	old.StartedAt = time.Now().Add(-48 * time.Hour) // backdate beyond maxAge
+	if err := writeMeta(s.metaPath(task, oldID), old); err != nil {
+		t.Fatalf("writeMeta: %v", err)
+	}
+	freshID := finishRun(t, s, task)
+
+	removed, err := s.Prune(task, 0, 24*time.Hour)
+	if err != nil {
+		t.Fatalf("Prune: %v", err)
+	}
+	if removed != 1 {
+		t.Fatalf("removed = %d, want 1", removed)
+	}
+	runs, err := s.List(task, 0)
+	if err != nil {
+		t.Fatalf("List: %v", err)
+	}
+	if len(runs) != 1 || runs[0].ID != freshID {
+		t.Fatalf("survivors = %+v, want only id %d", runs, freshID)
+	}
+}
+
+// TestPruneKeepsInFlight never deletes a non-terminal (pending/running) run,
+// even when it falls outside the keep window.
+func TestPruneKeepsInFlight(t *testing.T) {
+	s := newStore(t)
+	const task = "inflight"
+
+	pending, err := s.Create(task, model.TriggerManual) // id 1, left pending
+	if err != nil {
+		t.Fatalf("Create: %v", err)
+	}
+	finishRun(t, s, task) // id 2
+	finishRun(t, s, task) // id 3
+
+	// keep=1 would drop everything but id 3; the pending id 1 must still survive.
+	removed, err := s.Prune(task, 1, 0)
+	if err != nil {
+		t.Fatalf("Prune: %v", err)
+	}
+	if removed != 1 { // only the terminal id 2 is removable
+		t.Fatalf("removed = %d, want 1", removed)
+	}
+	if _, err := s.Get(task, pending.ID); err != nil {
+		t.Fatalf("pending run %d was pruned: %v", pending.ID, err)
+	}
 }
