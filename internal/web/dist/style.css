@@ -32,6 +32,10 @@
   --warning:     oklch(0.79 0.14 80);
   --destructive: oklch(0.67 0.20 25);
 
+  /* code surface (log viewer) */
+  --code-bg: oklch(0.15 0 0);
+  --code-fg: oklch(0.86 0 0);
+
   /* run-lifecycle status aliases */
   --st-success: var(--success);
   --st-failed:  var(--destructive);
@@ -49,6 +53,37 @@
   --font-sans: Inter, -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial,
                "PingFang SC", "Microsoft YaHei", "Noto Sans CJK SC", sans-serif;
   --mono: var(--font-mono);
+}
+
+/* Light theme — an independently tuned palette, not an inversion. Applied when
+   <html data-theme="light"> (set by the head script from saved choice / system).
+   Same specificity as :root, so source order (this block later) makes it win. */
+[data-theme="light"] {
+  --background:        oklch(0.99 0 0);
+  --card:             oklch(1 0 0);
+  --elevated:         oklch(0.965 0 0);
+  --muted:            oklch(0.93 0 0);
+  --border:           oklch(0 0 0 / 9%);
+  --border-strong:    oklch(0 0 0 / 15%);
+  --foreground:       oklch(0.22 0 0);
+  --muted-foreground: oklch(0.45 0 0);
+  --faint-foreground: oklch(0.57 0 0);
+
+  --hover:    oklch(0 0 0 / 4%);
+  --selected: oklch(0 0 0 / 7%);
+
+  --primary:            oklch(0.24 0 0);
+  --primary-foreground: oklch(0.985 0 0);
+  --ring:               oklch(0.55 0 0);
+
+  --brand:       oklch(0.52 0.18 255);
+  --info:        oklch(0.52 0.18 255);
+  --success:     oklch(0.52 0.15 150);
+  --warning:     oklch(0.62 0.13 65);
+  --destructive: oklch(0.55 0.22 27);
+
+  --code-bg: oklch(0.97 0 0);
+  --code-fg: oklch(0.28 0 0);
 }
 
 * { box-sizing: border-box; }
@@ -94,7 +129,8 @@ a:focus-visible {
   z-index: 10;
 }
 .brand { display: flex; align-items: center; gap: 8px; }
-.brand .logo { color: var(--brand); font-size: 16px; }
+.brand .logo { color: var(--brand); display: inline-flex; }
+.brand .logo .icon { width: 18px; height: 18px; }
 .brand .title { font-weight: 500; letter-spacing: .2px; }
 .crumbs { flex: 1; color: var(--muted-foreground); font-size: 12px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .crumbs .sep { color: var(--faint-foreground); margin: 0 6px; }
@@ -113,6 +149,10 @@ a:focus-visible {
 /* ---------- buttons ---------- */
 .btn {
   font: inherit;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
   color: var(--foreground);
   background: var(--elevated);
   border: 1px solid var(--border-strong);
@@ -121,6 +161,13 @@ a:focus-visible {
   cursor: pointer;
   transition: background .15s ease, border-color .15s ease, color .15s ease;
 }
+.btn.icon-only { padding: 7px; }
+.btn.sm.icon-only { padding: 5px; }
+
+/* inline stroke icons inherit the button's text color and scale with size */
+.icon { width: 16px; height: 16px; flex: 0 0 auto; }
+.btn.sm .icon { width: 14px; height: 14px; }
+.btn .spinner { width: 14px; height: 14px; border-width: 2px; }
 .btn:hover { background: var(--muted); }
 .btn:active { transform: translateY(1px); }
 .btn:disabled { opacity: .5; cursor: not-allowed; pointer-events: none; }
@@ -246,7 +293,7 @@ td.mono, .mono { font-family: var(--font-mono); }
 }
 .kv { display: grid; grid-template-columns: 150px 1fr; }
 .kv > div { padding: 8px 12px; border-bottom: 1px solid var(--border); min-width: 0; }
-.kv > div:nth-child(4n+1), .kv > div:nth-child(4n+2) { background: oklch(1 0 0 / 1.5%); }
+.kv > div:nth-child(4n+1), .kv > div:nth-child(4n+2) { background: color-mix(in oklch, var(--foreground) 2%, transparent); }
 .kv .k { color: var(--muted-foreground); }
 .kv .v { font-family: var(--font-mono); font-size: 14px; word-break: break-word; white-space: pre-wrap; }
 .kv .v.sans { font-family: var(--font-sans); }
@@ -267,14 +314,14 @@ td.mono, .mono { font-family: var(--font-mono); }
 .dot.done { background: var(--st-success); }
 
 .logbox {
-  background: oklch(0.15 0 0);
+  background: var(--code-bg);
   border: 1px solid var(--border);
   border-radius: var(--radius-lg);
   padding: 12px;
   font-family: var(--font-mono);
   font-size: 12px;
   line-height: 1.55;
-  color: oklch(0.86 0 0);
+  color: var(--code-fg);
   white-space: pre-wrap;
   word-break: break-word;
   overflow: auto;

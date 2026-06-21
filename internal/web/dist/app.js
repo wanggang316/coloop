@@ -37,6 +37,53 @@ function el(tag, attrs, ...children) {
 
 function clear(node) { while (node.firstChild) node.removeChild(node.firstChild); }
 
+// ---------- icons (inline Lucide SVG, no dependency) ----------
+
+// Path data lifted from lucide.dev. Each value is the inner markup of a
+// 24x24 stroke icon; icon() wraps it in a consistently-styled <svg>.
+const ICONS = {
+  repeat: '<path d="m17 2 4 4-4 4"/><path d="M3 11v-1a4 4 0 0 1 4-4h14"/><path d="m7 22-4-4 4-4"/><path d="M21 13v1a4 4 0 0 1-4 4H3"/>',
+  settings: '<path d="M12.22 2h-.44a2 2 0 0 0-2 2v.18a2 2 0 0 1-1 1.73l-.43.25a2 2 0 0 1-2 0l-.15-.08a2 2 0 0 0-2.73.73l-.22.38a2 2 0 0 0 .73 2.73l.15.1a2 2 0 0 1 1 1.72v.51a2 2 0 0 1-1 1.74l-.15.09a2 2 0 0 0-.73 2.73l.22.38a2 2 0 0 0 2.73.73l.15-.08a2 2 0 0 1 2 0l.43.25a2 2 0 0 1 1 1.73V20a2 2 0 0 0 2 2h.44a2 2 0 0 0 2-2v-.18a2 2 0 0 1 1-1.73l.43-.25a2 2 0 0 1 2 0l.15.08a2 2 0 0 0 2.73-.73l.22-.39a2 2 0 0 0-.73-2.73l-.15-.08a2 2 0 0 1-1-1.74v-.5a2 2 0 0 1 1-1.74l.15-.09a2 2 0 0 0 .73-2.73l-.22-.38a2 2 0 0 0-2.73-.73l-.15.08a2 2 0 0 1-2 0l-.43-.25a2 2 0 0 1-1-1.73V4a2 2 0 0 0-2-2z"/><circle cx="12" cy="12" r="3"/>',
+  'refresh-cw': '<path d="M3 12a9 9 0 0 1 9-9 9.75 9.75 0 0 1 6.74 2.74L21 8"/><path d="M21 3v5h-5"/><path d="M21 12a9 9 0 0 1-9 9 9.75 9.75 0 0 1-6.74-2.74L3 16"/><path d="M8 16H3v5"/>',
+  'rotate-ccw': '<path d="M3 12a9 9 0 1 0 9-9 9.75 9.75 0 0 0-6.74 2.74L3 8"/><path d="M3 3v5h5"/>',
+  sun: '<circle cx="12" cy="12" r="4"/><path d="M12 2v2"/><path d="M12 20v2"/><path d="m4.93 4.93 1.41 1.41"/><path d="m17.66 17.66 1.41 1.41"/><path d="M2 12h2"/><path d="M20 12h2"/><path d="m6.34 17.66-1.41 1.41"/><path d="m19.07 4.93-1.41 1.41"/>',
+  moon: '<path d="M12 3a6 6 0 0 0 9 9 9 9 0 1 1-9-9Z"/>',
+  play: '<polygon points="6 3 20 12 6 21 6 3"/>',
+  pencil: '<path d="M12 20h9"/><path d="M16.5 3.5a2.121 2.121 0 0 1 3 3L7 19l-4 1 1-4Z"/>',
+  trash: '<path d="M3 6h18"/><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/><line x1="10" x2="10" y1="11" y2="17"/><line x1="14" x2="14" y1="11" y2="17"/>',
+  plus: '<path d="M5 12h14"/><path d="M12 5v14"/>',
+};
+
+// icon builds a 24x24 stroke SVG that inherits the current text color and size.
+function icon(name, cls) {
+  const svg = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
+  svg.setAttribute('viewBox', '0 0 24 24');
+  svg.setAttribute('fill', 'none');
+  svg.setAttribute('stroke', 'currentColor');
+  svg.setAttribute('stroke-width', '2');
+  svg.setAttribute('stroke-linecap', 'round');
+  svg.setAttribute('stroke-linejoin', 'round');
+  svg.setAttribute('class', 'icon' + (cls ? ' ' + cls : ''));
+  svg.setAttribute('aria-hidden', 'true');
+  svg.innerHTML = ICONS[name] || '';
+  return svg;
+}
+
+// ---------- theme (light / dark) ----------
+
+function currentTheme() { return document.documentElement.dataset.theme === 'light' ? 'light' : 'dark'; }
+function applyTheme(t) {
+  document.documentElement.dataset.theme = t;
+  try { localStorage.setItem('theme', t); } catch (e) { /* private mode */ }
+  updateThemeIcon();
+}
+function toggleTheme() { applyTheme(currentTheme() === 'light' ? 'dark' : 'light'); }
+// Show the icon of the mode you'll switch TO: sun in dark, moon in light.
+function updateThemeIcon() {
+  const b = $('#themeBtn');
+  if (b) b.replaceChildren(icon(currentTheme() === 'dark' ? 'sun' : 'moon'));
+}
+
 const STATUSES = ['success', 'failed', 'timeout', 'running', 'pending'];
 
 function statusBadge(status) {
@@ -371,7 +418,7 @@ function renderRunnersTab(container) {
   const head = el('div', { class: 'settings-head' },
     el('p', { class: 'settings-hint' }, 'Reusable agent command templates. Agent tasks pick a runner by name.'),
     el('span', { class: 'spacer' }),
-    el('button', { class: 'btn primary sm', onclick: () => openRunnerForm(null, reload) }, '+ Add runner'));
+    el('button', { class: 'btn primary sm', onclick: () => openRunnerForm(null, reload) }, icon('plus'), 'Add runner'));
   container.append(head, slot);
 
   async function reload() {
@@ -389,8 +436,8 @@ function renderRunnersTab(container) {
           el('div', { class: 'reg-name' }, r.name),
           el('div', { class: 'reg-sub mono' }, r.cmd_tmpl)),
         el('div', { class: 'reg-actions' },
-          el('button', { class: 'btn sm', onclick: () => openRunnerForm(r, reload) }, 'edit'),
-          el('button', { class: 'btn sm danger', onclick: () => askDelete(r) }, 'delete'))));
+          el('button', { class: 'btn sm', onclick: () => openRunnerForm(r, reload) }, icon('pencil'), 'edit'),
+          el('button', { class: 'btn sm danger', onclick: () => askDelete(r) }, icon('trash'), 'delete'))));
       slot.append(el('div', { class: 'reg-list' }, rows));
     } catch (e) {
       clear(slot);
@@ -464,7 +511,7 @@ function renderChannelsTab(container) {
   const head = el('div', { class: 'settings-head' },
     el('p', { class: 'settings-hint' }, 'Named alert channels. Tasks pick which channels receive their alerts.'),
     el('span', { class: 'spacer' }),
-    el('button', { class: 'btn primary sm', onclick: () => openChannelForm(null, reload) }, '+ Add channel'));
+    el('button', { class: 'btn primary sm', onclick: () => openChannelForm(null, reload) }, icon('plus'), 'Add channel'));
   container.append(head, slot);
 
   async function reload() {
@@ -482,8 +529,8 @@ function renderChannelsTab(container) {
           el('div', { class: 'reg-name' }, c.name, ' ', el('span', { class: 'tag' }, c.type)),
           el('div', { class: 'reg-sub' }, channelSummary(c))),
         el('div', { class: 'reg-actions' },
-          el('button', { class: 'btn sm', onclick: () => openChannelForm(c, reload) }, 'edit'),
-          el('button', { class: 'btn sm danger', onclick: () => askDelete(c) }, 'delete'))));
+          el('button', { class: 'btn sm', onclick: () => openChannelForm(c, reload) }, icon('pencil'), 'edit'),
+          el('button', { class: 'btn sm danger', onclick: () => askDelete(c) }, icon('trash'), 'delete'))));
       slot.append(el('div', { class: 'reg-list' }, rows));
     } catch (e) {
       clear(slot);
@@ -667,7 +714,7 @@ function renderList(root) {
     el('h1', null, 'Tasks'),
     el('span', { class: 'meta', id: 'listMeta' }, ''),
     el('span', { class: 'spacer' }),
-    el('button', { class: 'btn primary sm', onclick: () => openTaskForm(null, () => load(true)) }, '+ New task'));
+    el('button', { class: 'btn primary sm', onclick: () => openTaskForm(null, () => load(true)) }, icon('plus'), 'New task'));
   const slot = el('div', { id: 'listSlot' }, loadingState());
   root.append(head, slot);
 
@@ -697,8 +744,8 @@ function renderList(root) {
   // Run a task without leaving the list; refresh shortly after to show "running".
   async function runTask(name, btn) {
     btn.disabled = true;
-    const label = btn.textContent;
-    btn.textContent = '…';
+    const saved = Array.from(btn.childNodes);
+    btn.replaceChildren(el('span', { class: 'spinner' }));
     try {
       const r = await Tasks.run(name);
       toast(`Triggered ${name} (run #${r.run_id})`, 'ok');
@@ -707,7 +754,7 @@ function renderList(root) {
       toast('Run failed: ' + e.message, 'err');
     } finally {
       btn.disabled = false;
-      btn.textContent = label;
+      btn.replaceChildren(...saved);
     }
   }
 
@@ -727,10 +774,10 @@ function renderList(root) {
         el('td', { class: 'dim nowrap hide-sm' }, t.cron ? fmtNext(tv.next_run) : '—'),
         el('td', { class: 'right' },
           el('button', {
-            class: 'btn primary sm',
+            class: 'btn primary sm icon-only',
             title: 'Trigger a manual run',
             onclick: (ev) => { ev.stopPropagation(); runTask(t.name, ev.currentTarget); },
-          }, 'run')));
+          }, icon('play'))));
       tr.addEventListener('click', () => {
         location.hash = '#/task/' + encodeURIComponent(t.name);
       });
@@ -884,9 +931,9 @@ function renderDetail(root, name) {
     $('#detailMeta').textContent = d.running ? 'running now' : '';
     clear(slot);
     const bar = el('div', { class: 'log-head' },
-      el('button', { class: 'btn primary sm', onclick: (ev) => runTask(ev.currentTarget) }, 'run now'),
-      el('button', { class: 'btn sm', onclick: () => openTaskForm(t, onEdited) }, 'edit'),
-      el('button', { class: 'btn sm danger', onclick: () => deleteTask() }, 'delete'),
+      el('button', { class: 'btn primary sm', onclick: (ev) => runTask(ev.currentTarget) }, icon('play'), 'run now'),
+      el('button', { class: 'btn sm', onclick: () => openTaskForm(t, onEdited) }, icon('pencil'), 'edit'),
+      el('button', { class: 'btn sm danger', onclick: () => deleteTask() }, icon('trash'), 'delete'),
       el('span', { class: 'spacer' }),
       el('span', { class: 'log-state' },
         el('span', { class: 'dot' + (d.running ? ' live' : '') }),
@@ -1045,6 +1092,16 @@ function renderLog(root, name, id) {
 // ========================================================================
 // boot
 // ========================================================================
+
+// Inject brand + header-action icons (kept out of index.html so the SVG markup
+// lives in one place).
+$('.brand .logo').replaceChildren(icon('repeat'));
+$('#settingsBtn').replaceChildren(icon('settings'));
+$('#reloadBtn').replaceChildren(icon('rotate-ccw'));
+$('#refreshBtn').replaceChildren(icon('refresh-cw'));
+updateThemeIcon();
+
+$('#themeBtn').addEventListener('click', toggleTheme);
 
 $('#settingsBtn').addEventListener('click', () => openSettings());
 

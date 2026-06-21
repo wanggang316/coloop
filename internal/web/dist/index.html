@@ -4,6 +4,19 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>the-loop</title>
+  <meta name="color-scheme" content="dark light">
+  <!-- Set the theme before first paint to avoid a flash of the wrong palette. -->
+  <script>
+    (function () {
+      try {
+        var t = localStorage.getItem('theme');
+        if (t !== 'light' && t !== 'dark') {
+          t = matchMedia('(prefers-color-scheme: light)').matches ? 'light' : 'dark';
+        }
+        document.documentElement.dataset.theme = t;
+      } catch (e) { document.documentElement.dataset.theme = 'dark'; }
+    })();
+  </script>
   <link rel="stylesheet" href="style.css">
 </head>
 <body>
@@ -14,9 +27,10 @@
     </div>
     <nav id="crumbs" class="crumbs"><!-- breadcrumb trail rendered by app.js --></nav>
     <div class="actions">
-      <button id="settingsBtn" class="btn ghost" title="Manage runners and channels">settings</button>
-      <button id="reloadBtn" class="btn ghost" title="Reload config from disk">reload</button>
-      <button id="refreshBtn" class="btn ghost" title="Refresh now">refresh</button>
+      <button id="themeBtn" class="btn ghost icon-only" title="Toggle light / dark theme" aria-label="Toggle theme"></button>
+      <button id="settingsBtn" class="btn ghost icon-only" title="Settings" aria-label="Settings"></button>
+      <button id="reloadBtn" class="btn ghost icon-only" title="Reload config from disk" aria-label="Reload config"></button>
+      <button id="refreshBtn" class="btn ghost icon-only" title="Refresh now" aria-label="Refresh"></button>
       <span id="poll" class="poll" title="Live polling indicator"></span>
     </div>
   </header>
