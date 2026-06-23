@@ -1,10 +1,22 @@
-# systemd unit for the-loop (Linux).
-# Install:
-#   sudo cp dist/the-loop-linux-amd64 /usr/local/bin/the-loop
-#   sudo mkdir -p /etc/the-loop && sudo cp config.example.yaml /etc/the-loop/config.yaml
-#   sudo cp deploy/the-loop.service /etc/systemd/system/the-loop.service
-#   sudo systemctl daemon-reload && sudo systemctl enable --now the-loop
-#   journalctl -u the-loop -f
+# systemd unit for the-loop (Linux, per-user service).
+#
+# Recommended: let the installer render and enable this for you:
+#   ./scripts/install.sh --service
+#
+# Manual install: replace the @TOKENS@ below, then enable it:
+#   @BIN@      -> absolute path to the installed binary (e.g. /usr/local/bin/the-loop)
+#   @CONFIG@   -> absolute path to your config         (e.g. /home/you/.the-loop/config.yaml)
+#
+#   mkdir -p ~/.config/systemd/user
+#   cp deploy/the-loop.service ~/.config/systemd/user/the-loop.service
+#   systemctl --user daemon-reload
+#   systemctl --user enable --now the-loop
+#   loginctl enable-linger "$USER"   # keep it running after you log out / at boot
+#   journalctl --user -u the-loop -f
+#
+# Prefer a system-wide service (runs as root, starts before login)? Drop this
+# file in /etc/systemd/system/, change WantedBy to multi-user.target, point
+# @CONFIG@ at /etc/the-loop/config.yaml, and use `sudo systemctl enable --now`.
 
 [Unit]
 Description=the-loop scheduled task daemon
@@ -12,11 +24,11 @@ After=network.target
 
 [Service]
 Type=simple
-ExecStart=/usr/local/bin/the-loop --config /etc/the-loop/config.yaml serve
+ExecStart=@BIN@ --config @CONFIG@ serve
 Restart=always
 RestartSec=3
 # Optional hardening:
 NoNewPrivileges=true
 
 [Install]
-WantedBy=multi-user.target
+WantedBy=default.target

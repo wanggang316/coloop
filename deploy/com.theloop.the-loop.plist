@@ -1,12 +1,18 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <!--
-  launchd agent for the-loop (macOS).
-  Install (replace USERNAME with your account):
-    cp dist/the-loop-darwin-arm64 /usr/local/bin/the-loop
-    mkdir -p ~/.the-loop && cp config.example.yaml ~/.the-loop/config.yaml
+  launchd agent for the-loop (macOS, per-user).
+
+  Recommended: let the installer render and load this for you:
+    ./scripts/install.sh --service
+
+  Manual install: replace the @TOKENS@ below, then load it:
+    @BIN@      -> absolute path to the installed binary (e.g. /usr/local/bin/the-loop)
+    @CONFIG@   -> absolute path to your config       (e.g. /Users/you/.the-loop/config.yaml)
+    @LOG@      -> absolute path for combined logs     (e.g. /Users/you/.the-loop/the-loop.log)
+
     cp deploy/com.theloop.the-loop.plist ~/Library/LaunchAgents/
-    launchctl load ~/Library/LaunchAgents/com.theloop.the-loop.plist
-    # logs: tail -f ~/.the-loop/the-loop.log
+    launchctl load -w ~/Library/LaunchAgents/com.theloop.the-loop.plist
+    tail -f ~/.the-loop/the-loop.log
 -->
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
 <plist version="1.0">
@@ -15,9 +21,9 @@
   <string>com.theloop.the-loop</string>
   <key>ProgramArguments</key>
   <array>
-    <string>/usr/local/bin/the-loop</string>
+    <string>@BIN@</string>
     <string>--config</string>
-    <string>/Users/USERNAME/.the-loop/config.yaml</string>
+    <string>@CONFIG@</string>
     <string>serve</string>
   </array>
   <key>RunAtLoad</key>
@@ -25,8 +31,8 @@
   <key>KeepAlive</key>
   <true/>
   <key>StandardOutPath</key>
-  <string>/Users/USERNAME/.the-loop/the-loop.log</string>
+  <string>@LOG@</string>
   <key>StandardErrorPath</key>
-  <string>/Users/USERNAME/.the-loop/the-loop.log</string>
+  <string>@LOG@</string>
 </dict>
 </plist>

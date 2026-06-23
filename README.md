@@ -35,9 +35,35 @@ engine    scheduler · executors · run store · notifiers
 state     ~/.the-loop/    config.yaml + runs/<task>/<id>/{meta.json,output.log}
 ```
 
+## Install
+
+Build from source and install in one step (requires Go 1.26+):
+
+```sh
+git clone https://github.com/wanggang316/the-loop.git
+cd the-loop
+./scripts/install.sh             # build + install to /usr/local/bin, seed ~/.the-loop/config.yaml
+./scripts/install.sh --service   # ...and enable start-at-boot (launchd / systemd)
+```
+
+No Go toolchain on the target? Run `make dist` once on a machine that has Go,
+copy the repo over, and install the matching prebuilt binary with
+`./scripts/install.sh --no-build`.
+
+| flag | meaning |
+|------|---------|
+| `--prefix DIR` | install location (binary goes in `DIR/bin`; default `/usr/local`) |
+| `--config PATH` | config to seed and point the service at (default `~/.the-loop/config.yaml`) |
+| `--service` | also install + enable the autostart service |
+| `--no-build` | skip building; use a prebuilt binary from `dist/` |
+
+The installer is idempotent — re-run it to upgrade the binary; an existing
+config is never overwritten. Remove everything with `./scripts/uninstall.sh`
+(add `--purge` to also delete `~/.the-loop`).
+
 ## Build
 
-Requires Go 1.26+.
+For development. Requires Go 1.26+.
 
 ```sh
 make build            # -> bin/the-loop
@@ -110,12 +136,17 @@ POST /api/reload
 
 ## Deploy
 
-- **Linux (systemd):** see header of [`deploy/the-loop.service`](deploy/the-loop.service).
-- **macOS (launchd):** see header of [`deploy/com.theloop.the-loop.plist`](deploy/com.theloop.the-loop.plist).
+`./scripts/install.sh --service` is the easy path: it renders and enables a
+per-user **launchd** agent (macOS) or **systemd** user service (Linux) that runs
+`the-loop serve` with restart-on-crash and start-at-boot.
 
-Both run `the-loop serve` with restart-on-crash and start-at-boot. To migrate a
-machine, copy the binary and the `~/.the-loop/` directory — the schedule is
-rebuilt from `config.yaml`.
+To wire it up by hand, see the header of the template for your platform:
+
+- **macOS (launchd):** [`deploy/com.theloop.the-loop.plist`](deploy/com.theloop.the-loop.plist)
+- **Linux (systemd):** [`deploy/the-loop.service`](deploy/the-loop.service)
+
+To migrate a machine, copy the binary and the `~/.the-loop/` directory — the
+schedule is rebuilt from `config.yaml`.
 
 ## Security
 
