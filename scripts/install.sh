@@ -152,12 +152,26 @@ else
 fi
 
 # ---- 4. autostart service (optional) ----------------------------------------
+
+# Escape a string for safe use as the replacement side of a sed s|...|...| .
+sed_repl() { printf '%s' "$1" | sed -e 's/[\\&|]/\\&/g'; }
+
+# PATH to bake into the service. launchd/systemd hand a daemon only a minimal
+# PATH, so bare agent runners (`claude`, `codex`, …) would not resolve. Bake the
+# installing user's PATH plus the install dir and standard system dirs, de-duped.
+service_path() {
+  printf '%s' "$PATH:$BIN_DIR:/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin" \
+    | awk -v RS=: '$0 != "" && !seen[$0]++ { printf "%s%s", sep, $0; sep=":" }'
+}
+
 install_launchd() {
   local plist="$HOME/Library/LaunchAgents/$LABEL.plist"
   local log="$CONFIG_DIR/the-loop.log"
+  local svc_path; svc_path="$(service_path)"
   info "Installing launchd agent -> $plist"
   mkdir -p "$HOME/Library/LaunchAgents"
-  sed -e "s|@BIN@|$BIN_PATH|g" -e "s|@CONFIG@|$CONFIG|g" -e "s|@LOG@|$log|g" \
+  sed -e "s|@BIN@|$(sed_repl "$BIN_PATH")|g" -e "s|@CONFIG@|$(sed_repl "$CONFIG")|g" \
+      -e "s|@LOG@|$(sed_repl "$log")|g" -e "s|@PATH@|$(sed_repl "$svc_path")|g" \
     "$REPO_ROOT/deploy/com.theloop.the-loop.plist" > "$plist"
   launchctl unload "$plist" >/dev/null 2>&1 || true   # ignore "not loaded"
   launchctl load -w "$plist"
@@ -167,10 +181,12 @@ install_launchd() {
 install_systemd_user() {
   local unit_dir="$HOME/.config/systemd/user"
   local unit="$unit_dir/the-loop.service"
+  local svc_path; svc_path="$(service_path)"
   command -v systemctl >/dev/null 2>&1 || die "systemctl not found; this Linux has no systemd (set up autostart manually)"
   info "Installing systemd user service -> $unit"
   mkdir -p "$unit_dir"
-  sed -e "s|@BIN@|$BIN_PATH|g" -e "s|@CONFIG@|$CONFIG|g" \
+  sed -e "s|@BIN@|$(sed_repl "$BIN_PATH")|g" -e "s|@CONFIG@|$(sed_repl "$CONFIG")|g" \
+      -e "s|@PATH@|$(sed_repl "$svc_path")|g" \
     "$REPO_ROOT/deploy/the-loop.service" > "$unit"
   systemctl --user daemon-reload
   systemctl --user enable --now the-loop

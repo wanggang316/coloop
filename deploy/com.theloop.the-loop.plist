@@ -9,6 +9,8 @@
     @BIN@      -> absolute path to the installed binary (e.g. /usr/local/bin/the-loop)
     @CONFIG@   -> absolute path to your config       (e.g. /Users/you/.the-loop/config.yaml)
     @LOG@      -> absolute path for combined logs     (e.g. /Users/you/.the-loop/the-loop.log)
+    @PATH@     -> PATH for the daemon, so agent runners like `claude`/`codex`
+                 resolve (launchd hands services only a minimal PATH otherwise)
 
     cp deploy/com.theloop.the-loop.plist ~/Library/LaunchAgents/
     launchctl load -w ~/Library/LaunchAgents/com.theloop.the-loop.plist
@@ -26,6 +28,11 @@
     <string>@CONFIG@</string>
     <string>serve</string>
   </array>
+  <key>EnvironmentVariables</key>
+  <dict>
+    <key>PATH</key>
+    <string>@PATH@</string>
+  </dict>
   <key>RunAtLoad</key>
   <true/>
   <key>KeepAlive</key>
