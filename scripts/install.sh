@@ -87,8 +87,6 @@ nearest_existing() {
 # sudo only when the destination tree is not writable; surface the reason first.
 # Quote a string for safe use inside a /bin/sh -c command.
 shq() { printf "'%s'" "$(printf '%s' "$1" | sed "s/'/'\\\\''/g")"; }
-# Escape a string for embedding in an AppleScript "do shell script" literal.
-asq() { printf '%s' "$1" | sed -e 's/\\/\\\\/g' -e 's/"/\\"/g'; }
 
 # Run a /bin/sh command string as root, picking the method that actually works
 # in this context: no elevation if the target is writable, then cached/passwordless
@@ -103,7 +101,13 @@ run_root() {
   fi
   if [ "$OS" = "darwin" ] && command -v osascript >/dev/null 2>&1; then
     warn "$target needs admin rights — a macOS authorization dialog will appear"
-    osascript -e "do shell script \"$(asq "$cmd")\" with administrator privileges" >/dev/null
+    # Pass cmd as an argv argument, never interpolated into the AppleScript
+    # source, so quoting in the command can't break the script's parse.
+    osascript \
+      -e 'on run argv' \
+      -e 'do shell script (item 1 of argv) with administrator privileges' \
+      -e 'end run' \
+      "$cmd" >/dev/null
     return
   fi
   if command -v sudo >/dev/null 2>&1 && [ -t 0 ]; then
