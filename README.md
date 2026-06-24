@@ -111,10 +111,26 @@ the-loop [--config PATH] <command>
 
   serve                       run the daemon (scheduler + API + UI)
   ls                          list tasks and their last status
+  show <task>                 print a task's definition and recent runs
+  add  --name N --type T …    create a task from flags
+  edit <task> [flags]         change a task's fields (only the flags you pass)
+  rm   <task>                 delete a task (run history is kept)
   run <task>                  trigger a task, print the new run id
   logs [-f] <task> [id]       show a run's log (latest if id omitted; -f follows)
   validate [path]             validate a config file offline
   reload                      ask the daemon to reload its config
+```
+
+`add` / `edit` take the task fields as flags — `--name --type --cron
+--working-dir --command --runner --prompt --cmd-tmpl --env KEY=VAL (repeatable)
+--timeout --alert --notifiers a,b --enabled`. `edit` applies only the flags you
+pass, leaving the rest as-is. Examples:
+
+```sh
+the-loop add --name nightly-build --type shell --cron "0 3 * * *" \
+             --working-dir ~/proj --command ./build.sh --alert on_failure
+the-loop edit nightly-build --cron "0 4 * * *"
+the-loop rm nightly-build
 ```
 
 The client commands target the daemon over HTTP, resolving the address from
@@ -123,15 +139,18 @@ The client commands target the daemon over HTTP, resolving the address from
 ### HTTP API
 
 ```
-GET  /healthz
-GET  /api/tasks
-GET  /api/tasks/{name}
-POST /api/tasks/{name}/run
-GET  /api/tasks/{name}/runs[?limit=N]
-GET  /api/tasks/{name}/runs/{id}
-GET  /api/tasks/{name}/runs/{id}/log       # full log (text)
-GET  /api/tasks/{name}/runs/{id}/stream    # live log (SSE)
-POST /api/reload
+GET    /healthz
+GET    /api/tasks
+POST   /api/tasks                          # create a task
+GET    /api/tasks/{name}
+PUT    /api/tasks/{name}                    # replace a task
+DELETE /api/tasks/{name}                    # delete a task
+POST   /api/tasks/{name}/run
+GET    /api/tasks/{name}/runs[?limit=N]
+GET    /api/tasks/{name}/runs/{id}
+GET    /api/tasks/{name}/runs/{id}/log     # full log (text)
+GET    /api/tasks/{name}/runs/{id}/stream  # live log (SSE)
+POST   /api/reload
 ```
 
 ## Deploy

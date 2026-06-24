@@ -6,6 +6,7 @@ package cli
 
 import (
 	"bufio"
+	"bytes"
 	"encoding/json"
 	"errors"
 	"flag"
@@ -14,6 +15,7 @@ import (
 	"net/http"
 	"net/url"
 	"os"
+	"sort"
 	"strconv"
 	"strings"
 	"text/tabwriter"
@@ -32,6 +34,14 @@ func Dispatch(cmd string, args []string, cfgPath string) int {
 	switch cmd {
 	case "ls":
 		return runLs(args, cfgPath)
+	case "show", "get":
+		return runShow(args, cfgPath)
+	case "add", "create":
+		return runAdd(args, cfgPath)
+	case "edit", "update":
+		return runEdit(args, cfgPath)
+	case "rm", "delete":
+		return runRm(args, cfgPath)
 	case "run":
 		return runRun(args, cfgPath)
 	case "logs":
@@ -55,10 +65,29 @@ func usage(w io.Writer) {
 
 usage:
   loop ls                       list tasks
+  loop show <task>              print a task's definition and recent runs
+  loop add --name N --type T …  create a task from flags
+  loop edit <task> [flags]      change a task's fields (only the flags you pass)
+  loop rm <task>                delete a task (run history is kept)
   loop run <task>               trigger a task, print the new run id
   loop logs [-f] <task> [id]    show a run's log (latest run if id omitted; -f to follow)
   loop validate [path]          validate a config file offline
   loop reload                   ask the daemon to reload its config
+
+task flags (add / edit):
+  --name <s>          task name (on edit, renames the task)
+  --type shell|agent
+  --cron <expr>       5-field cron; empty = manual only
+  --working-dir <dir> cwd for the command
+  --command <s>       shell task: command to run
+  --runner <name>     agent task: runner to use
+  --prompt <s>        agent task: prompt text
+  --cmd-tmpl <s>      agent task: inline command template (prefer --runner)
+  --env KEY=VAL       environment variable (repeatable)
+  --timeout <dur>     e.g. 30s / 10m / 1h
+  --alert <policy>    on_failure | on_success | always | never
+  --notifiers a,b     comma-separated notifier channel names
+  --enabled           set false to disable scheduling (--enabled=false)
 
 flags:
   --addr <url>   daemon base URL (overrides LOOP_ADDR and config listen)
@@ -120,6 +149,37 @@ func doJSON(method, url string, out any) error {
 	if err != nil {
 		return err
 	}
+	resp, err := httpClient.Do(req)
+	if err != nil {
+		return fmt.Errorf("cannot reach daemon at %s: %w", url, err)
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
+		return httpError(resp)
+	}
+	if out == nil {
+		_, _ = io.Copy(io.Discard, resp.Body)
+		return nil
+	}
+	if err := json.NewDecoder(resp.Body).Decode(out); err != nil {
+		return fmt.Errorf("decode response: %w", err)
+	}
+	return nil
+}
+
+// doJSONBody is doJSON with a JSON request body (for POST/PUT). out may be nil
+// to discard the response body.
+func doJSONBody(method, url string, body, out any) error {
+	b, err := json.Marshal(body)
+	if err != nil {
+		return fmt.Errorf("encode request: %w", err)
+	}
+	req, err := http.NewRequest(method, url, bytes.NewReader(b))
+	if err != nil {
+		return err
+	}
+	req.Header.Set("Content-Type", "application/json")
 	resp, err := httpClient.Do(req)
 	if err != nil {
 		return fmt.Errorf("cannot reach daemon at %s: %w", url, err)
@@ -245,6 +305,315 @@ func runRun(args []string, cfgPath string) int {
 	}
 	fmt.Println(tr.RunID)
 	return 0
+}
+
+// ---------------------------------------------------------------------------
+// show / add / edit / rm  (task CRUD)
+// ---------------------------------------------------------------------------
+
+// taskFlags are the shared field flags for `add` and `edit`. Only the flags the
+// user actually sets are applied, so `edit` patches one field at a time.
+type taskFlags struct {
+	name       *string
+	typ        *string
+	cron       *string
+	workingDir *string
+	command    *string
+	prompt     *string
+	cmdTmpl    *string
+	runner     *string
+	timeout    *string
+	alert      *string
+	notifiers  *string
+	enabled    *bool
+	env        *kvFlag
+}
+
+func registerTaskFlags(fs *flag.FlagSet) *taskFlags {
+	v := &taskFlags{
+		name:       fs.String("name", "", "task name (on edit, renames the task)"),
+		typ:        fs.String("type", "", "task type: shell | agent"),
+		cron:       fs.String("cron", "", "5-field cron expression; empty = manual only"),
+		workingDir: fs.String("working-dir", "", "working directory for the command"),
+		command:    fs.String("command", "", "shell task: command to run"),
+		prompt:     fs.String("prompt", "", "agent task: prompt text"),
+		cmdTmpl:    fs.String("cmd-tmpl", "", "agent task: inline command template"),
+		runner:     fs.String("runner", "", "agent task: runner name"),
+		timeout:    fs.String("timeout", "", "timeout, e.g. 30s / 10m / 1h"),
+		alert:      fs.String("alert", "", "alert policy: on_failure | on_success | always | never"),
+		notifiers:  fs.String("notifiers", "", "comma-separated notifier channel names"),
+		enabled:    fs.Bool("enabled", true, "whether the task is scheduled"),
+		env:        &kvFlag{},
+	}
+	fs.Var(v.env, "env", "environment variable KEY=VALUE (repeatable)")
+	return v
+}
+
+// apply overrides only the fields of t whose flags appear in set, so a partial
+// `edit` leaves everything else as the daemon already has it. It validates the
+// --timeout duration locally to give a clear message before the round-trip.
+func (v *taskFlags) apply(set map[string]bool, t *model.Task) error {
+	if set["name"] {
+		t.Name = *v.name
+	}
+	if set["type"] {
+		t.Type = model.TaskType(*v.typ)
+	}
+	if set["cron"] {
+		t.Cron = *v.cron
+	}
+	if set["working-dir"] {
+		t.WorkingDir = *v.workingDir
+	}
+	if set["command"] {
+		t.Command = *v.command
+	}
+	if set["prompt"] {
+		t.Prompt = *v.prompt
+	}
+	if set["cmd-tmpl"] {
+		t.CmdTmpl = *v.cmdTmpl
+	}
+	if set["runner"] {
+		t.Runner = *v.runner
+	}
+	if set["timeout"] {
+		d, err := time.ParseDuration(*v.timeout)
+		if err != nil {
+			return fmt.Errorf("invalid --timeout %q: %w", *v.timeout, err)
+		}
+		t.Timeout = model.Duration(d)
+	}
+	if set["alert"] {
+		t.Alert = model.AlertPolicy(*v.alert)
+	}
+	if set["notifiers"] {
+		t.Notifiers = splitList(*v.notifiers)
+	}
+	if set["enabled"] {
+		b := *v.enabled
+		t.Enabled = &b
+	}
+	if set["env"] {
+		if t.Env == nil {
+			t.Env = map[string]string{}
+		}
+		for k, val := range v.env.m {
+			t.Env[k] = val
+		}
+	}
+	return nil
+}
+
+// kvFlag collects repeated KEY=VALUE flags into a map.
+type kvFlag struct{ m map[string]string }
+
+func (k *kvFlag) String() string { return "" }
+
+func (k *kvFlag) Set(s string) error {
+	key, val, ok := strings.Cut(s, "=")
+	if !ok || key == "" {
+		return fmt.Errorf("expected KEY=VALUE, got %q", s)
+	}
+	if k.m == nil {
+		k.m = map[string]string{}
+	}
+	k.m[key] = val
+	return nil
+}
+
+// splitList parses a comma-separated flag value into a trimmed, non-empty slice.
+// An empty input yields an empty (non-nil) slice, which clears the field.
+func splitList(s string) []string {
+	out := []string{}
+	for _, part := range strings.Split(s, ",") {
+		if p := strings.TrimSpace(part); p != "" {
+			out = append(out, p)
+		}
+	}
+	return out
+}
+
+// visited returns the names of flags that were explicitly set, so edit can tell
+// "set to empty" apart from "left unchanged".
+func visited(fs *flag.FlagSet) map[string]bool {
+	set := map[string]bool{}
+	fs.Visit(func(f *flag.Flag) { set[f.Name] = true })
+	return set
+}
+
+// takeName pulls a leading positional task name (the first arg not starting with
+// "-") off the front of args. This lets `edit <task> --flags` read naturally
+// despite Go's flag package stopping at the first positional argument.
+func takeName(args []string) (string, []string) {
+	if len(args) > 0 && !strings.HasPrefix(args[0], "-") {
+		return args[0], args[1:]
+	}
+	return "", args
+}
+
+func runAdd(args []string, cfgPath string) int {
+	fs := flag.NewFlagSet("add", flag.ContinueOnError)
+	fs.SetOutput(io.Discard)
+	addr := fs.String("addr", "", "daemon base URL")
+	tf := registerTaskFlags(fs)
+	if err := fs.Parse(args); err != nil {
+		return fail("add: %v", err)
+	}
+	var t model.Task
+	if err := tf.apply(visited(fs), &t); err != nil {
+		return fail("add: %v", err)
+	}
+	if t.Name == "" || t.Type == "" {
+		return fail("add: --name and --type are required")
+	}
+	base := resolveAddr(*addr, cfgPath)
+
+	var created model.Task
+	if err := doJSONBody(http.MethodPost, base+"/api/tasks", t, &created); err != nil {
+		return fail("%v", err)
+	}
+	fmt.Printf("created %s\n", created.Name)
+	return 0
+}
+
+func runEdit(args []string, cfgPath string) int {
+	name, rest := takeName(args)
+	fs := flag.NewFlagSet("edit", flag.ContinueOnError)
+	fs.SetOutput(io.Discard)
+	addr := fs.String("addr", "", "daemon base URL")
+	tf := registerTaskFlags(fs)
+	if err := fs.Parse(rest); err != nil {
+		return fail("edit: %v", err)
+	}
+	if name == "" {
+		return fail("edit: expected a task name (loop edit <task> [flags])")
+	}
+	base := resolveAddr(*addr, cfgPath)
+
+	// Fetch, patch the named fields, then put the whole task back: PUT replaces
+	// the task wholesale, so a partial edit must start from the current value.
+	var detail model.TaskDetail
+	if err := doJSON(http.MethodGet, base+"/api/tasks/"+pathEscape(name), &detail); err != nil {
+		return fail("%v", err)
+	}
+	t := detail.Task
+	if err := tf.apply(visited(fs), &t); err != nil {
+		return fail("edit: %v", err)
+	}
+
+	var updated model.Task
+	if err := doJSONBody(http.MethodPut, base+"/api/tasks/"+pathEscape(name), t, &updated); err != nil {
+		return fail("%v", err)
+	}
+	fmt.Printf("updated %s\n", updated.Name)
+	return 0
+}
+
+func runRm(args []string, cfgPath string) int {
+	name, rest := takeName(args)
+	fs := flag.NewFlagSet("rm", flag.ContinueOnError)
+	fs.SetOutput(io.Discard)
+	addr := fs.String("addr", "", "daemon base URL")
+	if err := fs.Parse(rest); err != nil {
+		return fail("rm: %v", err)
+	}
+	if name == "" || len(fs.Args()) > 0 {
+		return fail("rm: expected exactly one task name")
+	}
+	base := resolveAddr(*addr, cfgPath)
+	if err := doJSON(http.MethodDelete, base+"/api/tasks/"+pathEscape(name), nil); err != nil {
+		return fail("%v", err)
+	}
+	fmt.Printf("deleted %s\n", name)
+	return 0
+}
+
+func runShow(args []string, cfgPath string) int {
+	name, rest := takeName(args)
+	fs := flag.NewFlagSet("show", flag.ContinueOnError)
+	fs.SetOutput(io.Discard)
+	addr := fs.String("addr", "", "daemon base URL")
+	if err := fs.Parse(rest); err != nil {
+		return fail("show: %v", err)
+	}
+	if name == "" || len(fs.Args()) > 0 {
+		return fail("show: expected exactly one task name")
+	}
+	base := resolveAddr(*addr, cfgPath)
+
+	var detail model.TaskDetail
+	if err := doJSON(http.MethodGet, base+"/api/tasks/"+pathEscape(name), &detail); err != nil {
+		return fail("%v", err)
+	}
+	printTask(detail)
+	return 0
+}
+
+// printTask renders a task's definition and its most recent runs.
+func printTask(d model.TaskDetail) {
+	t := d.Task
+	tw := tabwriter.NewWriter(os.Stdout, 0, 0, 2, ' ', 0)
+	row := func(k, v string) { fmt.Fprintf(tw, "%s\t%s\n", k, v) }
+	row("name", t.Name)
+	row("type", string(t.Type))
+	row("enabled", strconv.FormatBool(t.IsEnabled()))
+	row("cron", dash(t.Cron))
+	row("working_dir", dash(t.WorkingDir))
+	if t.Type == model.TaskAgent {
+		row("runner", dash(t.Runner))
+		if t.CmdTmpl != "" {
+			row("cmd_tmpl", t.CmdTmpl)
+		}
+		row("prompt", dash(t.Prompt))
+	} else {
+		row("command", dash(t.Command))
+	}
+	if len(t.Env) > 0 {
+		row("env", strings.Join(envPairs(t.Env), " "))
+	}
+	row("timeout", t.Timeout.Std().String())
+	row("alert", dash(string(t.Alert)))
+	if len(t.Notifiers) > 0 {
+		row("notifiers", strings.Join(t.Notifiers, ", "))
+	}
+	row("next_run", nextRun(d.NextRun))
+	_ = tw.Flush()
+
+	if len(d.Runs) == 0 {
+		fmt.Println("\nno runs yet")
+		return
+	}
+	fmt.Println("\nrecent runs:")
+	rt := tabwriter.NewWriter(os.Stdout, 0, 0, 2, ' ', 0)
+	fmt.Fprintln(rt, "  ID\tSTATUS\tSTARTED\tELAPSED")
+	for _, r := range d.Runs {
+		fmt.Fprintf(rt, "  %d\t%s\t%s\t%s\n", r.ID, r.Status, nextRun(r.StartedAt), elapsed(r))
+	}
+	_ = rt.Flush()
+}
+
+// envPairs renders an env map as sorted KEY=VALUE tokens for stable output.
+func envPairs(env map[string]string) []string {
+	keys := make([]string, 0, len(env))
+	for k := range env {
+		keys = append(keys, k)
+	}
+	sort.Strings(keys)
+	pairs := make([]string, len(keys))
+	for i, k := range keys {
+		pairs[i] = k + "=" + env[k]
+	}
+	return pairs
+}
+
+// elapsed formats a run's wall-clock duration, or "-" while it is still running.
+func elapsed(r model.Run) string {
+	d := r.Elapsed()
+	if d == 0 {
+		return "-"
+	}
+	return d.Round(time.Millisecond).String()
 }
 
 // ---------------------------------------------------------------------------
