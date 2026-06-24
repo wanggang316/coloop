@@ -32,9 +32,11 @@ max_runs: 50            # keep only the newest N runs per task (0 = unlimited)
 # until the run ends. List them here to customise or pin them.
 runners:
   - name: claude-code
-    # acceptEdits auto-applies file edits; for unattended tasks that run
-    # shell/git, swap in --dangerously-skip-permissions.
-    cmd_tmpl: 'claude -p "{{.Prompt}}" --output-format stream-json --verbose --permission-mode acceptEdits'
+    # the-loop runs agents unattended, so nobody is there to answer permission
+    # prompts: --dangerously-skip-permissions lets the agent run shell/git/network
+    # steps instead of silently stalling on approval. Swap in
+    # --permission-mode acceptEdits to restrict it to file edits only.
+    cmd_tmpl: 'claude -p "{{.Prompt}}" --output-format stream-json --verbose --dangerously-skip-permissions'
   - name: codex
     # --full-auto runs sandboxed with automatic approvals.
     cmd_tmpl: 'codex exec --json --full-auto "{{.Prompt}}"'

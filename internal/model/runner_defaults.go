@@ -6,9 +6,11 @@ package model
 // ({{.Prompt}}, {{.TaskName}}, {{.WorkingDir}}, {{.Env}}) and streams structured
 // output so the live log shows progress instead of going silent until the end.
 var DefaultRunners = []AgentRunner{
-	// acceptEdits auto-applies file edits; for unattended tasks that run
-	// shell/git, edit this to use --dangerously-skip-permissions.
-	{Name: "claude-code", CmdTmpl: `claude -p "{{.Prompt}}" --output-format stream-json --verbose --permission-mode acceptEdits`},
+	// the-loop runs agents unattended, so there is nobody to answer permission
+	// prompts: --dangerously-skip-permissions lets the agent run shell/git/network
+	// steps (the common case) instead of silently stalling on approval. Swap in
+	// --permission-mode acceptEdits if you only trust it to edit files.
+	{Name: "claude-code", CmdTmpl: `claude -p "{{.Prompt}}" --output-format stream-json --verbose --dangerously-skip-permissions`},
 	// --full-auto runs sandboxed with automatic approvals.
 	{Name: "codex", CmdTmpl: `codex exec --json --full-auto "{{.Prompt}}"`},
 }
