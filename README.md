@@ -57,6 +57,12 @@ copy the repo over, and install the matching prebuilt binary with
 | `--service` | also install + enable the autostart service |
 | `--no-build` | skip building; use a prebuilt binary from `dist/` |
 
+Installing into a system prefix like `/usr/local` needs admin rights: the
+script uses cached `sudo` when available, otherwise a native macOS
+authorization dialog (no terminal password prompt required), and only when the
+target isn't already writable. Prefer no elevation at all? Pass
+`--prefix "$HOME/.local"`.
+
 The installer is idempotent — re-run it to upgrade the binary; an existing
 config is never overwritten. Remove everything with `./scripts/uninstall.sh`
 (add `--purge` to also delete `~/.the-loop`).

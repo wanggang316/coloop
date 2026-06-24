@@ -85,12 +85,32 @@ nearest_existing() {
 }
 
 # sudo only when the destination tree is not writable; surface the reason first.
-maybe_sudo() {
-  local probe; probe="$(nearest_existing "$1")"
-  if [ -w "$probe" ]; then SUDO=""; return; fi
-  command -v sudo >/dev/null 2>&1 || die "$1 is not writable and sudo is unavailable; re-run with --prefix \$HOME/.local"
-  warn "$probe needs elevated permissions; sudo may prompt for your password"
-  SUDO="sudo"
+# Quote a string for safe use inside a /bin/sh -c command.
+shq() { printf "'%s'" "$(printf '%s' "$1" | sed "s/'/'\\\\''/g")"; }
+# Escape a string for embedding in an AppleScript "do shell script" literal.
+asq() { printf '%s' "$1" | sed -e 's/\\/\\\\/g' -e 's/"/\\"/g'; }
+
+# Run a /bin/sh command string as root, picking the method that actually works
+# in this context: no elevation if the target is writable, then cached/passwordless
+# sudo, then a native macOS GUI prompt (no TTY needed), then an interactive sudo
+# prompt on Linux. Dies with guidance if none apply.
+#   $1 = path being written (for the writable check)   $2 = command string
+run_root() {
+  local target="$1" cmd="$2"
+  if [ -w "$(nearest_existing "$target")" ]; then sh -c "$cmd"; return; fi
+  if command -v sudo >/dev/null 2>&1 && sudo -n true >/dev/null 2>&1; then
+    sudo /bin/sh -c "$cmd"; return
+  fi
+  if [ "$OS" = "darwin" ] && command -v osascript >/dev/null 2>&1; then
+    warn "$target needs admin rights — a macOS authorization dialog will appear"
+    osascript -e "do shell script \"$(asq "$cmd")\" with administrator privileges" >/dev/null
+    return
+  fi
+  if command -v sudo >/dev/null 2>&1 && [ -t 0 ]; then
+    warn "$target needs elevated permissions; sudo may prompt for your password"
+    sudo /bin/sh -c "$cmd"; return
+  fi
+  die "cannot write $target without privileges; re-run with --prefix \"\$HOME/.local\" or as root"
 }
 
 # ---- 1. obtain the binary ----------------------------------------------------
@@ -114,9 +134,7 @@ fi
 
 # ---- 2. install the binary ---------------------------------------------------
 info "Installing binary -> $BIN_PATH"
-maybe_sudo "$BIN_DIR"
-$SUDO mkdir -p "$BIN_DIR"
-$SUDO install -m 0755 "$SRC_BIN" "$BIN_PATH"
+run_root "$BIN_DIR" "/bin/mkdir -p $(shq "$BIN_DIR") && /usr/bin/install -m 0755 $(shq "$SRC_BIN") $(shq "$BIN_PATH")"
 ok "installed"
 
 # ---- 3. seed the config ------------------------------------------------------

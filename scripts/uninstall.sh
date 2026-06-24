@@ -67,13 +67,31 @@ nearest_existing() {
   printf '%s' "$d"
 }
 
-# Removing a file needs write permission on its directory, not the file itself.
-maybe_sudo() {
-  local probe; probe="$(nearest_existing "$1")"
-  if [ -w "$probe" ]; then SUDO=""; return; fi
-  command -v sudo >/dev/null 2>&1 || die "$probe is not writable and sudo is unavailable"
-  warn "$probe needs elevated permissions; sudo may prompt for your password"
-  SUDO="sudo"
+# Quote a string for safe use inside a /bin/sh -c command.
+shq() { printf "'%s'" "$(printf '%s' "$1" | sed "s/'/'\\\\''/g")"; }
+# Escape a string for embedding in an AppleScript "do shell script" literal.
+asq() { printf '%s' "$1" | sed -e 's/\\/\\\\/g' -e 's/"/\\"/g'; }
+
+# Run a /bin/sh command string as root using whatever works here: nothing if the
+# target dir is writable, then cached sudo, then a macOS GUI prompt (no TTY), then
+# an interactive sudo prompt. Mirrors install.sh so /usr/local installs reverse cleanly.
+#   $1 = path being modified (for the writable check)   $2 = command string
+run_root() {
+  local target="$1" cmd="$2"
+  if [ -w "$(nearest_existing "$target")" ]; then sh -c "$cmd"; return; fi
+  if command -v sudo >/dev/null 2>&1 && sudo -n true >/dev/null 2>&1; then
+    sudo /bin/sh -c "$cmd"; return
+  fi
+  if [ "$OS" = "darwin" ] && command -v osascript >/dev/null 2>&1; then
+    warn "$target needs admin rights — a macOS authorization dialog will appear"
+    osascript -e "do shell script \"$(asq "$cmd")\" with administrator privileges" >/dev/null
+    return
+  fi
+  if command -v sudo >/dev/null 2>&1 && [ -t 0 ]; then
+    warn "$target needs elevated permissions; sudo may prompt for your password"
+    sudo /bin/sh -c "$cmd"; return
+  fi
+  die "cannot modify $target without privileges; remove it manually or re-run as root"
 }
 
 # ---- 1. stop & remove the autostart service ----------------------------------
@@ -106,8 +124,7 @@ esac
 # ---- 2. remove the binary ----------------------------------------------------
 if [ -e "$BIN_PATH" ] || [ -L "$BIN_PATH" ]; then
   info "Removing binary -> $BIN_PATH"
-  maybe_sudo "$(dirname "$BIN_PATH")"
-  $SUDO rm -f "$BIN_PATH"
+  run_root "$(dirname "$BIN_PATH")" "/bin/rm -f $(shq "$BIN_PATH")"
   ok "removed"
 else
   info "No binary at $BIN_PATH"
