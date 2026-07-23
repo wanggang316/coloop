@@ -1014,9 +1014,9 @@ function toolSummary(name, input) {
   return firstLine(v);
 }
 
-// toolInputDetail renders a tool's full input for the collapsible "input"
-// section: a bare command reads better raw than JSON-escaped; everything else
-// is pretty-printed JSON.
+// toolInputDetail renders a tool's full input for the expandable row detail:
+// a bare command reads better raw than JSON-escaped; everything else is
+// pretty-printed JSON.
 function toolInputDetail(input) {
   if (input && typeof input === 'object' && typeof input.command === 'string') {
     return input.command + (input.description ? '\n\n(' + input.description + ')' : '');
@@ -1045,128 +1045,72 @@ function fmtMs(ms) {
   return m + 'm ' + rem + 's';
 }
 
-// collapsible builds a <details> disclosure with a preformatted body.
-function collapsible(summaryText, bodyText, error) {
-  return el('details', { class: 'ev-collapse' },
-    el('summary', null, summaryText),
-    el('pre', { class: 'ev-pre' + (error ? ' error' : '') }, bodyText));
-}
-
-// createTranscript renders Claude Code events into a scroll container via the
-// supplied sink { place(node), appendResult(mount, node) }. It keeps a map of
-// tool_use id → result mount so a later tool_result attaches under its call.
+// createTranscript decomposes Claude Code events into flat table rows, emitting
+// each through sink.row(desc) and run-level stats through sink.stat(patch). A
+// desc is { kind, tone:'solid'|'muted', color:'blue'|'green'|'gray', label,
+// summary, detail, error?, time? }. It maps tool_use id -> tool name so a later
+// tool_result row can be labelled with the tool it answers.
 function createTranscript(sink) {
-  let toolCards = new Map();
-  function reset() { toolCards = new Map(); }
+  let toolNames = new Map();
+  function reset() { toolNames = new Map(); }
 
-  function renderInit(o) {
-    const bits = [];
-    if (o.model) bits.push(o.model);
-    if (Array.isArray(o.tools)) bits.push(o.tools.length + ' tools');
-    if (o.permissionMode) bits.push(o.permissionMode);
-    const details = [];
-    if (o.cwd) details.push('cwd: ' + o.cwd);
-    if (o.session_id) details.push('session: ' + o.session_id);
-    if (Array.isArray(o.mcp_servers) && o.mcp_servers.length) {
-      details.push('mcp: ' + o.mcp_servers.map((m) => m.name + (m.status ? '(' + m.status + ')' : '')).join(', '));
-    }
-    if (Array.isArray(o.tools)) details.push('tools: ' + o.tools.join(', '));
-    sink.place(el('div', { class: 'ev ev-init' },
-      el('div', { class: 'ev-init-head' },
-        el('span', { class: 'ev-kind' }, 'session'),
-        el('span', { class: 'mono dim' }, bits.join(' · '))),
-      details.length ? collapsible('details', details.join('\n')) : null));
+  function shortenPath(p) {
+    const parts = String(p || '').split('/').filter(Boolean);
+    return parts.length <= 2 ? String(p || '') : '…/' + parts.slice(-2).join('/');
   }
 
-  function renderAssistant(o) {
-    const content = (o.message && o.message.content) || [];
-    for (const b of content) {
+  // callSummary prefers a human-written description, then a path, then the arg.
+  function callSummary(name, input) {
+    input = input || {};
+    if (name === 'Bash') return input.description ? String(input.description) : firstLine(input.command);
+    if (name === 'Read' || name === 'Edit' || name === 'MultiEdit' || name === 'Write' || name === 'NotebookEdit') {
+      return shortenPath(input.file_path || input.notebook_path);
+    }
+    return toolSummary(name, input);
+  }
+
+  function asst(o) {
+    for (const b of (o.message && o.message.content) || []) {
       if (!b || typeof b !== 'object') continue;
       if (b.type === 'text') {
-        if ((b.text || '').trim()) sink.place(el('div', { class: 'ev ev-text' }, b.text));
+        if ((b.text || '').trim()) sink.row({ kind: 'agent', tone: 'solid', color: 'green', label: 'Agent', summary: firstLine(b.text), detail: b.text });
       } else if (b.type === 'thinking') {
-        if ((b.thinking || '').trim()) {
-          sink.place(el('div', { class: 'ev ev-thinking' }, collapsible('thinking', b.thinking)));
-        }
+        if ((b.thinking || '').trim()) sink.row({ kind: 'thinking', tone: 'muted', color: 'gray', label: 'Thinking', summary: firstLine(b.thinking), detail: b.thinking });
       } else if (b.type === 'tool_use') {
-        renderToolUse(b);
+        const name = b.name || 'tool';
+        if (b.id) toolNames.set(b.id, name);
+        sink.row({ kind: 'tool', tone: 'solid', color: 'blue', label: name, summary: callSummary(name, b.input), detail: toolInputDetail(b.input) });
       }
     }
   }
 
-  function renderToolUse(tu) {
-    const name = tu.name || 'tool';
-    const summary = toolSummary(name, tu.input);
-    const full = toolInputDetail(tu.input);
-    const resultMount = el('div', { class: 'tool-result' });
-    const showDetails = full && (full.length > 80 || full.indexOf('\n') >= 0);
-    const card = el('div', { class: 'ev ev-tool' },
-      el('div', { class: 'tool-head' },
-        el('span', { class: 'tool-name' }, name),
-        summary ? el('span', { class: 'tool-arg mono' }, summary) : null),
-      showDetails ? collapsible('input', full) : null,
-      resultMount);
-    if (tu.id) toolCards.set(tu.id, resultMount);
-    sink.place(card);
-  }
-
-  function renderUser(o) {
-    const content = (o.message && o.message.content) || [];
-    for (const b of content) {
-      if (b && typeof b === 'object' && b.type === 'tool_result') renderToolResult(b);
+  function usr(o) {
+    for (const b of (o.message && o.message.content) || []) {
+      if (!b || typeof b !== 'object' || b.type !== 'tool_result') continue;
+      const text = toolResultText(b.content);
+      const label = (b.tool_use_id && toolNames.get(b.tool_use_id)) || 'Result';
+      sink.row({ kind: 'result', tone: 'muted', color: 'blue', label, summary: firstLine(text) || '(no output)', detail: text || '(no output)', error: !!b.is_error, time: o.timestamp });
     }
   }
 
-  function renderToolResult(tr) {
-    const text = toolResultText(tr.content);
-    const lines = text.split('\n');
-    const truncated = lines.length > 12 || text.length > 1200;
-    const node = truncated
-      ? collapsible((tr.is_error ? 'error · ' : '') + 'output (' + lines.length + ' lines)', text, tr.is_error)
-      : el('pre', { class: 'ev-pre' + (tr.is_error ? ' error' : '') }, text || '(no output)');
-    const mount = tr.tool_use_id && toolCards.get(tr.tool_use_id);
-    if (mount) sink.appendResult(mount, node);
-    else sink.place(el('div', { class: 'ev ev-tool orphan' }, el('div', { class: 'tool-result' }, node)));
-  }
-
-  function renderSystem(o) {
-    if (o.subtype === 'init') return renderInit(o);
-    if (o.subtype === 'task_started') {
-      return sink.place(el('div', { class: 'ev ev-task' },
-        el('span', { class: 'ev-kind' }, 'task'),
-        el('span', null, o.description || o.task_id || '')));
-    }
-    if (o.subtype === 'task_notification') {
-      const done = o.status === 'completed';
-      return sink.place(el('div', { class: 'ev ev-task' + (done ? ' done' : '') },
-        el('span', { class: 'ev-kind' }, 'task ' + (o.status || '')),
-        el('span', null, o.summary || '')));
-    }
+  function sys(o) {
+    if (o.subtype === 'init') { sink.stat({ model: o.model, cwd: o.cwd, permissionMode: o.permissionMode }); return; }
+    if (o.subtype === 'task_started') { sink.row({ kind: 'task', tone: 'solid', color: 'green', label: 'Task', summary: o.description || o.task_id || '', detail: o.description }); return; }
+    if (o.subtype === 'task_notification') { sink.row({ kind: 'task', tone: 'muted', color: 'green', label: 'Task', summary: (o.status ? o.status + ': ' : '') + (o.summary || ''), detail: o.summary }); return; }
     // hook_started / hook_response / thinking_tokens / … → noise, skip.
   }
 
-  function renderResult(o) {
+  function res(o) {
     const err = o.is_error || o.subtype === 'error';
-    const metrics = [];
-    if (o.duration_ms != null) metrics.push(fmtMs(o.duration_ms));
-    if (o.num_turns != null) metrics.push(o.num_turns + ' turns');
-    if (o.total_cost_usd != null) metrics.push('$' + Number(o.total_cost_usd).toFixed(4));
-    const body = (o.result != null && String(o.result).trim())
-      ? el('div', { class: 'ev-text result-text' }, String(o.result))
-      : null;
-    sink.place(el('div', { class: 'ev result-card' },
-      el('div', { class: 'result-head' },
-        el('span', { class: 'badge ' + (err ? 'failed' : 'success') }, err ? 'error' : 'success'),
-        metrics.length ? el('span', { class: 'dim', style: 'font-size:12px' }, metrics.join('  ·  ')) : null),
-      body));
+    sink.stat({ status: err ? 'error' : 'success', durationMs: o.duration_ms, numTurns: o.num_turns, costUsd: o.total_cost_usd });
   }
 
   function render(o) {
     switch (o.type) {
-      case 'system': return renderSystem(o);
-      case 'assistant': return renderAssistant(o);
-      case 'user': return renderUser(o);
-      case 'result': return renderResult(o);
+      case 'system': return sys(o);
+      case 'assistant': return asst(o);
+      case 'user': return usr(o);
+      case 'result': return res(o);
       default: return; // rate_limit_event & unknown → skip
     }
   }
@@ -1202,20 +1146,37 @@ function renderLog(root, name, id) {
   const fmtBtn = el('button', { type: 'button', class: 'seg-btn', onclick: () => setMode('formatted', true) }, 'Formatted');
   const rawBtn = el('button', { type: 'button', class: 'seg-btn', onclick: () => setMode('raw', true) }, 'Raw');
   const seg = el('div', { class: 'seg' }, fmtBtn, rawBtn);
+  const expandBtn = el('button', { type: 'button', class: 'btn sm', onclick: () => toggleExpandAll() }, 'expand all');
+  const copyBtn = el('button', { type: 'button', class: 'btn sm', onclick: () => copyAll() }, 'copy');
+
+  // run-summary header (formatted mode only): status pill + chips + minimap.
+  const statusEl = el('span', { class: 'rs-status' });
+  const chipsEl = el('div', { class: 'rs-chips' });
+  const minimapEl = el('div', { class: 'minimap' });
+  const runSummary = el('div', { class: 'run-summary', hidden: true },
+    el('div', { class: 'rs-line' }, statusEl, chipsEl), minimapEl);
+
   const head = el('div', { class: 'log-head' },
     el('h1', { style: 'font-size:16px;margin:0' }, `${name} · run #${id}`),
     el('span', { class: 'spacer' }),
     seg,
+    expandBtn,
+    copyBtn,
     el('label', { class: 'toggle' }, autoScrollBox, 'auto-scroll'),
     el('span', { class: 'log-state', id: 'logState' },
       el('span', { class: 'dot', id: 'logDot' }), el('span', { id: 'logStateText' }, 'connecting…')));
 
   const box = el('div', { class: 'logbox', id: 'logbox' });
-  root.append(el('div', { class: 'page-head', style: 'margin-bottom:8px' }, head), box);
+  root.append(el('div', { class: 'page-head', style: 'margin-bottom:8px' }, head), runSummary, box);
 
-  // place appends a rendered node, keeping the view pinned to the bottom while
-  // auto-scroll is on and the user has not scrolled up. appendResult does the
-  // same when a tool_result is grafted into an already-rendered tool card.
+  // ---- formatted event table: badge rows + summary header + minimap ----
+  let rowIdx = 0;
+  let allExpanded = false;
+  const STAT0 = { status: null, model: null, cwd: null, permissionMode: null, durationMs: null, numTurns: null, costUsd: null, toolCalls: 0 };
+  const stats = Object.assign({}, STAT0);
+
+  // place appends a node to the scroll box, staying pinned to the bottom while
+  // auto-scroll is on and the user has not scrolled up.
   function place(node) {
     if (!node) return;
     const atBottom = box.scrollHeight - box.scrollTop - box.clientHeight < 60;
@@ -1223,46 +1184,137 @@ function renderLog(root, name, id) {
     if (autoScrollBox.checked && (atBottom || !gotAny)) box.scrollTop = box.scrollHeight;
     gotAny = true;
   }
-  function appendResult(mount, node) {
-    const atBottom = box.scrollHeight - box.scrollTop - box.clientHeight < 60;
-    mount.append(node);
-    if (autoScrollBox.checked && atBottom) box.scrollTop = box.scrollHeight;
-    gotAny = true;
-  }
-  const transcript = createTranscript({ place, appendResult });
 
-  function updateSeg() {
+  function shortCwd(p) {
+    const parts = String(p || '').split('/').filter(Boolean);
+    return parts.length <= 2 ? String(p || '') : parts.slice(-2).join('/');
+  }
+
+  // fmtClock renders an ISO timestamp as a local HH:MM:SS (or '' if unparseable).
+  function fmtClock(ts) {
+    const d = new Date(ts);
+    if (isNaN(d) || d.getUTCFullYear() <= 1) return '';
+    return d.toLocaleTimeString(undefined, { hour12: false });
+  }
+
+  // renderHeader redraws the run-summary status pill and metadata chips.
+  function renderHeader() {
+    statusEl.className = 'rs-status';
+    if (stats.status === 'success') { statusEl.classList.add('ok'); statusEl.textContent = 'completed'; }
+    else if (stats.status === 'error') { statusEl.classList.add('err'); statusEl.textContent = 'failed'; }
+    else { statusEl.classList.add('run'); statusEl.textContent = doneSeen ? 'finished' : 'running'; }
+    const chips = ['Claude Code'];
+    if (stats.model) chips.push(stats.model);
+    if (stats.durationMs != null) chips.push(fmtMs(stats.durationMs));
+    chips.push(stats.toolCalls + ' tool call' + (stats.toolCalls === 1 ? '' : 's'));
+    chips.push(rowIdx + ' event' + (rowIdx === 1 ? '' : 's'));
+    if (stats.numTurns != null) chips.push(stats.numTurns + ' turns');
+    if (stats.costUsd != null) chips.push('$' + Number(stats.costUsd).toFixed(4));
+    if (stats.cwd) chips.push(shortCwd(stats.cwd));
+    clear(chipsEl);
+    for (const c of chips) chipsEl.append(el('span', { class: 'chip' }, c));
+  }
+
+  // sinkRow renders one decomposed event as a badge row plus a minimap tick.
+  function sinkRow(desc) {
+    rowIdx += 1;
+    if (desc.kind === 'tool') stats.toolCalls += 1;
+    const idx = rowIdx;
+    const summary = desc.summary || '';
+    const detailText = desc.detail != null ? String(desc.detail) : '';
+    const hasDetail = !!detailText && (detailText !== summary || detailText.indexOf('\n') >= 0);
+    const detail = hasDetail
+      ? el('pre', { class: 'evdetail' + (desc.error ? ' error' : ''), hidden: !allExpanded }, detailText)
+      : null;
+    const rowHead = el('div', { class: 'evrow-head' + (hasDetail ? '' : ' leaf') },
+      el('span', { class: 'evchev' }, '›'),
+      el('span', { class: 'evbadge ' + desc.tone + ' ' + desc.color + (desc.error ? ' err' : '') }, desc.label),
+      el('span', { class: 'evsummary' }, summary),
+      el('span', { class: 'evmeta' }, '#' + idx + (desc.time ? '  ' + fmtClock(desc.time) : '')));
+    const row = el('div', { class: 'evrow', dataset: { kind: desc.kind } }, rowHead, detail);
+    if (hasDetail) {
+      if (allExpanded) row.classList.add('open');
+      rowHead.addEventListener('click', () => {
+        detail.hidden = !detail.hidden;
+        row.classList.toggle('open', !detail.hidden);
+      });
+    }
+    place(row);
+    const tick = el('i', { class: 'tick ' + desc.color + ' ' + desc.tone, title: '#' + idx + ' ' + desc.label });
+    tick.addEventListener('click', () => row.scrollIntoView({ block: 'center' }));
+    minimapEl.append(tick);
+    renderHeader();
+  }
+
+  function sinkStat(patch) { Object.assign(stats, patch); renderHeader(); }
+
+  const transcript = createTranscript({ row: sinkRow, stat: sinkStat });
+
+  function toggleExpandAll() {
+    allExpanded = !allExpanded;
+    for (const d of box.querySelectorAll('.evdetail')) d.hidden = !allExpanded;
+    for (const r of box.querySelectorAll('.evrow')) r.classList.toggle('open', allExpanded && !!r.querySelector('.evdetail'));
+    expandBtn.textContent = allExpanded ? 'collapse all' : 'expand all';
+  }
+
+  async function copyAll() {
+    const text = entries.filter((e) => e.kind === 'content').map((e) => e.text).join('\n');
+    try { await navigator.clipboard.writeText(text); toast('Log copied', 'ok'); }
+    catch (_) { toast('Copy failed', 'err'); }
+  }
+
+  // applyModeChrome syncs the toggle, run-summary visibility and toolbar to mode.
+  function applyModeChrome() {
     fmtBtn.classList.toggle('active', mode === 'formatted');
     rawBtn.classList.toggle('active', mode === 'raw');
+    const fmt = mode === 'formatted';
+    runSummary.hidden = !fmt;
+    expandBtn.hidden = !fmt;
+    if (fmt) renderHeader();
   }
 
-  function renderMeta(text, sys) {
-    place(el('div', { class: 'log-meta' + (sys ? ' sys' : '') }, text === '' ? ' ' : text));
+  function renderMeta(text) {
+    if (mode === 'formatted') {
+      place(el('div', { class: 'evrow meta' }, el('span', { class: 'evmeta-note' }, text || ' ')));
+    } else {
+      place(el('div', { class: 'log-meta sys' }, text === '' ? ' ' : text));
+    }
   }
 
   function renderContentNode(text) {
     if (mode === 'formatted') {
       const o = tryParseJSON(text);
       if (isClaudeEvent(o)) { transcript.render(o); return; }
+      place(el('div', { class: 'evrow meta' }, el('span', { class: 'evmeta-note mono' }, text === '' ? ' ' : text)));
+      return;
     }
     place(el('span', { class: 'ln' }, text === '' ? ' ' : text));
   }
 
+  function resetStats() {
+    rowIdx = 0;
+    Object.assign(stats, STAT0);
+    stats.toolCalls = 0;
+  }
+
   function rebuild() {
     clear(box);
+    clear(minimapEl);
     gotAny = false;
+    resetStats();
     transcript.reset();
+    applyModeChrome();
     for (const e of entries) {
-      if (e.kind === 'meta') renderMeta(e.text, e.sys);
+      if (e.kind === 'meta') renderMeta(e.text);
       else renderContentNode(e.text);
     }
+    renderHeader();
   }
 
   function setMode(m, byUser) {
     if (byUser) userPinnedMode = true;
     if (mode === m) return;
     mode = m;
-    updateSeg();
     rebuild();
   }
 
@@ -1272,7 +1324,7 @@ function renderLog(root, name, id) {
     gotData = true;
     if (mode === null) {
       mode = isClaudeEvent(tryParseJSON(text)) ? 'formatted' : 'raw';
-      updateSeg();
+      applyModeChrome();
     } else if (mode === 'raw' && !userPinnedMode && entries.length <= 10 && isClaudeEvent(tryParseJSON(text))) {
       // An early non-JSON banner mis-detected the run as raw; the first real
       // event upgrades it to formatted (replaying what we have).
@@ -1286,17 +1338,27 @@ function renderLog(root, name, id) {
   // errors) that survives a mode switch alongside the run's own output.
   function pushMeta(text) {
     entries.push({ kind: 'meta', text, sys: true });
-    renderMeta(text, true);
+    renderMeta(text);
   }
 
-  // resetTranscript drops all buffered lines and clears the box, preserving the
-  // chosen view mode. Used on reconnect (server replays from the start) and
-  // before loading the static log.
+  // setRunStatus reflects the terminal SSE status into the header when there was
+  // no explicit `result` event (e.g. a crashed or killed run).
+  function setRunStatus(s) {
+    if (stats.status) return;
+    if (s === 'success') stats.status = 'success';
+    else if (s) stats.status = 'error';
+    renderHeader();
+  }
+
+  // resetTranscript drops all buffered lines and clears the view, preserving mode.
   function resetTranscript() {
     entries.length = 0;
     transcript.reset();
     clear(box);
+    clear(minimapEl);
+    resetStats();
     gotAny = false;
+    renderHeader();
   }
 
   function setState(text, cls) {
@@ -1358,6 +1420,7 @@ function renderLog(root, name, id) {
       doneSeen = true;
       const status = (ev.data || '').trim();
       appendLine(status ? `— run ${status} —` : '— run finished —', true);
+      setRunStatus(status);
       setState(status ? 'finished: ' + status : 'finished', 'done');
       es.close();
       es = null;
