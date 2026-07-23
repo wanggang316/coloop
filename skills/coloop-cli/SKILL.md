@@ -1,13 +1,13 @@
 ---
-name: the-loop-cli
-description: Operate the-loop from the terminal — list, inspect, create, edit, delete, trigger, and tail scheduled tasks against a running daemon. Use when running `the-loop` commands, managing tasks from the terminal instead of the Web UI or editing config.yaml by hand, triggering a run, following a run's log, or scripting against the daemon's HTTP API.
+name: coloop-cli
+description: Operate coloop from the terminal — list, inspect, create, edit, delete, trigger, and tail scheduled tasks against a running daemon. Use when running `coloop` commands, managing tasks from the terminal instead of the Web UI or editing config.yaml by hand, triggering a run, following a run's log, or scripting against the daemon's HTTP API.
 ---
 
-# the-loop-cli: driving the-loop from the terminal
+# coloop-cli: driving coloop from the terminal
 
 ## Overview
 
-`the-loop` is one binary that is both the daemon and a thin CLI. With no
+`coloop` is one binary that is both the daemon and a thin CLI. With no
 subcommand (or `serve`) it runs the scheduler + HTTP API + Web UI. Every other
 subcommand is a small HTTP client that talks to an already-running daemon — so
 the daemon must be up first (except `validate`, which is offline). Task edits
@@ -29,7 +29,7 @@ automatically, exactly like edits made in the Web UI.
 - You want to change `listen`, `shell`, `data_dir`, runners, or notifier channels
   — the CLI only covers **tasks**. Edit `config.yaml` (it hot-reloads) or use the Web UI.
 - The daemon is not running — client commands will fail with "cannot reach daemon".
-  Start it with `the-loop serve` (or the installed launchd/systemd service).
+  Start it with `coloop serve` (or the installed launchd/systemd service).
 
 ## Prerequisites: a running daemon + addressing
 
@@ -37,8 +37,8 @@ All commands except `validate` need a reachable daemon. The client resolves the
 base URL in this order:
 
 1. `--addr <url>` flag (e.g. `--addr http://127.0.0.1:8765`)
-2. `$LOOP_ADDR` environment variable
-3. the `listen:` field of the config (`--config PATH`, default `~/.the-loop/config.yaml`)
+2. `$COLOOP_ADDR` environment variable
+3. the `listen:` field of the config (`--config PATH`, default `~/.coloop/config.yaml`)
 4. built-in default `http://127.0.0.1:8765`
 
 A bare `host:port` or `:port` is normalised to an `http://` loopback URL.
@@ -46,7 +46,7 @@ A bare `host:port` or `:port` is normalised to an `http://` loopback URL.
 ## Commands
 
 ```
-the-loop [--config PATH] <command> [args]
+coloop [--config PATH] <command> [args]
 
   serve                       run the daemon (scheduler + API + UI)
   ls                          list tasks: name, type, cron, last status, next run
@@ -93,41 +93,41 @@ actually passed**, then replaces the task. Everything you don't pass stays as-is
 
 ```sh
 # Inspect
-the-loop ls
-the-loop show db-backup
+coloop ls
+coloop show db-backup
 
 # Create a scheduled shell task
-the-loop add --name db-backup --type shell \
+coloop add --name db-backup --type shell \
              --cron "0 3 * * *" --working-dir ~/projects/api \
              --command ./scripts/backup.sh \
              --env ENV=prod --timeout 30m --alert on_failure
 
 # Create an agent task using a named runner
-the-loop add --name triage --type agent --cron "0 */2 * * *" \
+coloop add --name triage --type agent --cron "0 */2 * * *" \
              --working-dir ~/projects/web --runner claude-code \
              --prompt "Inspect today's alert logs and summarize action items." \
              --alert always --notifiers team-feishu
 
 # Patch one field (everything else untouched)
-the-loop edit db-backup --cron "0 4 * * *"
-the-loop edit db-backup --enabled=false        # pause scheduling
-the-loop edit triage --name triage-v2          # rename
+coloop edit db-backup --cron "0 4 * * *"
+coloop edit db-backup --enabled=false        # pause scheduling
+coloop edit triage --name triage-v2          # rename
 
 # Trigger + watch
-id=$(the-loop run db-backup)
-the-loop logs -f db-backup "$id"               # follow live
-the-loop logs db-backup                         # latest run, static
+id=$(coloop run db-backup)
+coloop logs -f db-backup "$id"               # follow live
+coloop logs db-backup                         # latest run, static
 
 # Delete (run history kept on disk)
-the-loop rm db-backup
+coloop rm db-backup
 
 # Offline config check / hot reload
-the-loop validate ~/.the-loop/config.yaml
-the-loop reload
+coloop validate ~/.coloop/config.yaml
+coloop reload
 
 # Target a non-default daemon
-the-loop --addr http://127.0.0.1:9000 ls
-LOOP_ADDR=http://host:8765 the-loop ls
+coloop --addr http://127.0.0.1:9000 ls
+COLOOP_ADDR=http://host:8765 coloop ls
 ```
 
 ## Common Rationalizations
@@ -143,7 +143,7 @@ LOOP_ADDR=http://host:8765 the-loop ls
 
 ## Red Flags
 
-- Running `sudo the-loop …` — the CLI never needs root; only the daemon's bind port matters.
+- Running `sudo coloop …` — the CLI never needs root; only the daemon's bind port matters.
 - Prefixing client commands while no daemon is running, then blaming the command.
 - Using `--cmd-tmpl` for new agent tasks instead of a named `--runner`.
 - Passing a non-loopback `--addr` to a daemon whose API is unauthenticated.
@@ -151,8 +151,8 @@ LOOP_ADDR=http://host:8765 the-loop ls
 
 ## Verification
 
-- [ ] `the-loop ls` returns the task table (daemon reachable).
-- [ ] `the-loop add …` prints `created <name>` and the task appears in `ls`.
-- [ ] `the-loop edit <task> --cron …` prints `updated <name>` and `show` reflects only that change.
-- [ ] `the-loop rm <task>` prints `deleted <name>` and it disappears from `ls`.
-- [ ] `the-loop validate <path>` prints `OK` for a good config and a clear error otherwise.
+- [ ] `coloop ls` returns the task table (daemon reachable).
+- [ ] `coloop add …` prints `created <name>` and the task appears in `ls`.
+- [ ] `coloop edit <task> --cron …` prints `updated <name>` and `show` reflects only that change.
+- [ ] `coloop rm <task>` prints `deleted <name>` and it disappears from `ls`.
+- [ ] `coloop validate <path>` prints `OK` for a good config and a clear error otherwise.

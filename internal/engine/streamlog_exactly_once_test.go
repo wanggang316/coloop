@@ -7,8 +7,8 @@ import (
 	"testing"
 	"time"
 
-	"github.com/wanggang316/the-loop/internal/executor"
-	"github.com/wanggang316/the-loop/internal/model"
+	"github.com/wanggang316/coloop/internal/executor"
+	"github.com/wanggang316/coloop/internal/model"
 )
 
 // steppedExec emits a fixed number of numbered lines, one per release on step,

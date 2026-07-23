@@ -7,7 +7,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/wanggang316/the-loop/internal/model"
+	"github.com/wanggang316/coloop/internal/model"
 )
 
 // writeConfig writes content to a config.yaml inside a fresh temp dir and
@@ -116,7 +116,7 @@ func TestLoadExplicitValuesNotOverridden(t *testing.T) {
 	path := writeConfig(t, `
 listen: "127.0.0.1:9999"
 shell: /bin/bash
-data_dir: /var/lib/the-loop
+data_dir: /var/lib/coloop
 tasks:
   - name: hello
     type: shell
@@ -136,8 +136,8 @@ tasks:
 	if cfg.Shell != "/bin/bash" {
 		t.Errorf("Shell = %q, want \"/bin/bash\"", cfg.Shell)
 	}
-	if cfg.DataDir != "/var/lib/the-loop" {
-		t.Errorf("DataDir = %q, want \"/var/lib/the-loop\"", cfg.DataDir)
+	if cfg.DataDir != "/var/lib/coloop" {
+		t.Errorf("DataDir = %q, want \"/var/lib/coloop\"", cfg.DataDir)
 	}
 	if cfg.Tasks[0].Alert != model.AlertAlways {
 		t.Errorf("Alert = %q, want %q", cfg.Tasks[0].Alert, model.AlertAlways)

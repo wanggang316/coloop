@@ -1,5 +1,5 @@
-BINARY := the-loop
-PKG := ./cmd/the-loop
+BINARY := coloop
+PKG := ./cmd/coloop
 LDFLAGS := -s -w
 
 .PHONY: build test race vet fmt run clean dist install

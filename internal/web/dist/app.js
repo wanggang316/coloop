@@ -1,4 +1,4 @@
-// the-loop admin SPA — vanilla JS, no framework, no build.
+// coloop admin SPA — vanilla JS, no framework, no build.
 // Consumes the JSON API served by internal/api and renders three views:
 //   #/                          task list
 //   #/task/<name>               task detail + recent runs

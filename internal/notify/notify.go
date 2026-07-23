@@ -4,7 +4,7 @@ package notify
 import (
 	"context"
 
-	"github.com/wanggang316/the-loop/internal/model"
+	"github.com/wanggang316/coloop/internal/model"
 )
 
 // Notifier delivers a run event to one channel.

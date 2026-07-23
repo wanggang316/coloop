@@ -1,4 +1,4 @@
-// Package config loads, validates and watches the-loop's config.yaml,
+// Package config loads, validates and watches coloop's config.yaml,
 // turning it into a *model.Config the rest of the daemon builds on.
 package config
 
@@ -13,7 +13,7 @@ import (
 	"github.com/robfig/cron/v3"
 	"gopkg.in/yaml.v3"
 
-	"github.com/wanggang316/the-loop/internal/model"
+	"github.com/wanggang316/coloop/internal/model"
 )
 
 // Load reads the YAML config at path, applies defaults and expands "~/" in

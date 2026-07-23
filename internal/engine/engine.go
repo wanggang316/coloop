@@ -1,4 +1,4 @@
-// Package engine is the headless core of the-loop. It ties the cron scheduler,
+// Package engine is the headless core of coloop. It ties the cron scheduler,
 // task executors, run store and notifier dispatch together, and exposes a small
 // concrete API that the HTTP server and CLI consume.
 //
@@ -17,10 +17,10 @@ import (
 
 	"github.com/robfig/cron/v3"
 
-	"github.com/wanggang316/the-loop/internal/executor"
-	"github.com/wanggang316/the-loop/internal/model"
-	"github.com/wanggang316/the-loop/internal/notify"
-	"github.com/wanggang316/the-loop/internal/store"
+	"github.com/wanggang316/coloop/internal/executor"
+	"github.com/wanggang316/coloop/internal/model"
+	"github.com/wanggang316/coloop/internal/notify"
+	"github.com/wanggang316/coloop/internal/store"
 )
 
 // ErrNotFound is returned when a task or run does not exist.

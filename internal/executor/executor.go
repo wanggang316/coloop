@@ -6,7 +6,7 @@ import (
 	"context"
 	"io"
 
-	"github.com/wanggang316/the-loop/internal/model"
+	"github.com/wanggang316/coloop/internal/model"
 )
 
 // Result is the terminal outcome of a single execution.

@@ -8,7 +8,7 @@ import (
 	"strings"
 	"text/template"
 
-	"github.com/wanggang316/the-loop/internal/model"
+	"github.com/wanggang316/coloop/internal/model"
 )
 
 // AgentExecutor renders a task's CmdTmpl into a shell command and runs it.

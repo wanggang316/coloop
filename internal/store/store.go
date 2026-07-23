@@ -7,7 +7,7 @@ import (
 	"io"
 	"time"
 
-	"github.com/wanggang316/the-loop/internal/model"
+	"github.com/wanggang316/coloop/internal/model"
 )
 
 // Store is the filesystem-backed run repository. A single daemon owns all

@@ -1,4 +1,4 @@
-// Command the-loop is the daemon and CLI entry point. With no subcommand (or
+// Command coloop is the daemon and CLI entry point. With no subcommand (or
 // "serve") it runs the scheduler/HTTP server; any other subcommand is handled
 // by the thin HTTP client in internal/cli.
 package main
@@ -16,19 +16,19 @@ import (
 	"syscall"
 	"time"
 
-	"github.com/wanggang316/the-loop/internal/api"
-	"github.com/wanggang316/the-loop/internal/cli"
-	"github.com/wanggang316/the-loop/internal/config"
-	"github.com/wanggang316/the-loop/internal/engine"
-	"github.com/wanggang316/the-loop/internal/executor"
-	"github.com/wanggang316/the-loop/internal/model"
-	"github.com/wanggang316/the-loop/internal/notify"
-	"github.com/wanggang316/the-loop/internal/store"
-	"github.com/wanggang316/the-loop/internal/web"
+	"github.com/wanggang316/coloop/internal/api"
+	"github.com/wanggang316/coloop/internal/cli"
+	"github.com/wanggang316/coloop/internal/config"
+	"github.com/wanggang316/coloop/internal/engine"
+	"github.com/wanggang316/coloop/internal/executor"
+	"github.com/wanggang316/coloop/internal/model"
+	"github.com/wanggang316/coloop/internal/notify"
+	"github.com/wanggang316/coloop/internal/store"
+	"github.com/wanggang316/coloop/internal/web"
 )
 
 // defaultConfig is the config path used when --config is not given.
-const defaultConfig = "~/.the-loop/config.yaml"
+const defaultConfig = "~/.coloop/config.yaml"
 
 // shutdownTimeout bounds graceful server shutdown and engine drain.
 const shutdownTimeout = 30 * time.Second
@@ -36,7 +36,7 @@ const shutdownTimeout = 30 * time.Second
 func main() {
 	log.SetFlags(0)
 
-	fs := flag.NewFlagSet("the-loop", flag.ExitOnError)
+	fs := flag.NewFlagSet("coloop", flag.ExitOnError)
 	cfgFlag := fs.String("config", defaultConfig, "path to config.yaml")
 	_ = fs.Parse(os.Args[1:])
 
@@ -62,12 +62,12 @@ func main() {
 func runServe(cfgPath string) {
 	cfg, err := config.Load(cfgPath)
 	if err != nil {
-		log.Fatalf("the-loop: %v", err)
+		log.Fatalf("coloop: %v", err)
 	}
 
 	st, err := store.New(cfg.DataDir)
 	if err != nil {
-		log.Fatalf("the-loop: %v", err)
+		log.Fatalf("coloop: %v", err)
 	}
 
 	disp := notify.NewDispatcher(cfg.NotifierChannels)
@@ -87,12 +87,12 @@ func runServe(cfgPath string) {
 
 	if w, err := config.Watch(cfgPath, func() {
 		if err := reload(); err != nil {
-			log.Printf("the-loop: config reload failed: %v", err)
+			log.Printf("coloop: config reload failed: %v", err)
 		} else {
-			log.Printf("the-loop: config reloaded")
+			log.Printf("coloop: config reloaded")
 		}
 	}); err != nil {
-		log.Printf("the-loop: config watch disabled: %v", err)
+		log.Printf("coloop: config watch disabled: %v", err)
 	} else {
 		defer w.Close()
 	}
@@ -122,18 +122,18 @@ func runServe(cfgPath string) {
 
 	select {
 	case err := <-errCh:
-		log.Fatalf("the-loop: serve: %v", err)
+		log.Fatalf("coloop: serve: %v", err)
 	case sig := <-sigCh:
-		log.Printf("the-loop: received %s, shutting down", sig)
+		log.Printf("coloop: received %s, shutting down", sig)
 	}
 
 	ctx, cancel := context.WithTimeout(context.Background(), shutdownTimeout)
 	defer cancel()
 	if err := srv.Shutdown(ctx); err != nil {
-		log.Printf("the-loop: server shutdown: %v", err)
+		log.Printf("coloop: server shutdown: %v", err)
 	}
 	if err := eng.Stop(ctx); err != nil {
-		log.Printf("the-loop: engine stop: %v", err)
+		log.Printf("coloop: engine stop: %v", err)
 	}
 }
 
@@ -143,12 +143,12 @@ func banner(cfg *model.Config, disp *notify.Dispatcher) {
 	if channels == "" {
 		channels = "none"
 	}
-	log.Printf("the-loop listening on %s  tasks=%d  notifiers=%s  data=%s",
+	log.Printf("coloop listening on %s  tasks=%d  notifiers=%s  data=%s",
 		cfg.Listen, len(cfg.Tasks), channels, cfg.DataDir)
 	// An empty host (e.g. ":8765") binds every interface, exposing the
 	// unauthenticated API to the LAN. Warn so a non-loopback bind is noticed.
 	if host, _, err := net.SplitHostPort(cfg.Listen); err == nil && host == "" {
-		log.Printf("the-loop: WARNING: listen address %q has no host and binds all interfaces; the API is unauthenticated and reachable from the network", cfg.Listen)
+		log.Printf("coloop: WARNING: listen address %q has no host and binds all interfaces; the API is unauthenticated and reachable from the network", cfg.Listen)
 	}
 }
 

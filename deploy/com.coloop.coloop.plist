@@ -1,26 +1,26 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <!--
-  launchd agent for the-loop (macOS, per-user).
+  launchd agent for coloop (macOS, per-user).
 
   Recommended: let the installer render and load this for you:
     ./scripts/install.sh --service
 
   Manual install: replace the @TOKENS@ below, then load it:
-    @BIN@      -> absolute path to the installed binary (e.g. /usr/local/bin/the-loop)
-    @CONFIG@   -> absolute path to your config       (e.g. /Users/you/.the-loop/config.yaml)
-    @LOG@      -> absolute path for combined logs     (e.g. /Users/you/.the-loop/the-loop.log)
+    @BIN@      -> absolute path to the installed binary (e.g. /usr/local/bin/coloop)
+    @CONFIG@   -> absolute path to your config       (e.g. /Users/you/.coloop/config.yaml)
+    @LOG@      -> absolute path for combined logs     (e.g. /Users/you/.coloop/coloop.log)
     @PATH@     -> PATH for the daemon, so agent runners like `claude`/`codex`
                  resolve (launchd hands services only a minimal PATH otherwise)
 
-    cp deploy/com.theloop.the-loop.plist ~/Library/LaunchAgents/
-    launchctl load -w ~/Library/LaunchAgents/com.theloop.the-loop.plist
-    tail -f ~/.the-loop/the-loop.log
+    cp deploy/com.coloop.coloop.plist ~/Library/LaunchAgents/
+    launchctl load -w ~/Library/LaunchAgents/com.coloop.coloop.plist
+    tail -f ~/.coloop/coloop.log
 -->
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
 <plist version="1.0">
 <dict>
   <key>Label</key>
-  <string>com.theloop.the-loop</string>
+  <string>com.coloop.coloop</string>
   <key>ProgramArguments</key>
   <array>
     <string>@BIN@</string>

@@ -9,7 +9,7 @@ import (
 	"syscall"
 	"time"
 
-	"github.com/wanggang316/the-loop/internal/model"
+	"github.com/wanggang316/coloop/internal/model"
 )
 
 // waitDelay bounds how long cmd.Wait blocks after the process is signalled.

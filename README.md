@@ -1,4 +1,4 @@
-# the-loop
+# coloop
 
 A lightweight, stable local **scheduled-task manager** for macOS and Linux.
 Single Go binary, no database, no Node build chain — it schedules local
@@ -36,7 +36,7 @@ CLI are both just clients of that API.
 clients   Web UI · CLI ──┐
                           │  JSON REST + SSE   (the only seam)
 engine    scheduler · executors · run store · notifiers
-state     ~/.the-loop/    config.yaml + runs/<task>/<id>/{meta.json,output.log}
+state     ~/.coloop/    config.yaml + runs/<task>/<id>/{meta.json,output.log}
 ```
 
 ## Install
@@ -44,9 +44,9 @@ state     ~/.the-loop/    config.yaml + runs/<task>/<id>/{meta.json,output.log}
 Build from source and install in one step (requires Go 1.26+):
 
 ```sh
-git clone https://github.com/wanggang316/the-loop.git
-cd the-loop
-./scripts/install.sh             # build + install to /usr/local/bin, seed ~/.the-loop/config.yaml
+git clone https://github.com/wanggang316/coloop.git
+cd coloop
+./scripts/install.sh             # build + install to /usr/local/bin, seed ~/.coloop/config.yaml
 ./scripts/install.sh --service   # ...and enable start-at-boot (launchd / systemd)
 ```
 
@@ -57,20 +57,20 @@ copy the repo over, and install the matching prebuilt binary with
 | flag | meaning |
 |------|---------|
 | `--prefix DIR` | install location (binary goes in `DIR/bin`; default `/usr/local`) |
-| `--config PATH` | config to seed and point the service at (default `~/.the-loop/config.yaml`) |
+| `--config PATH` | config to seed and point the service at (default `~/.coloop/config.yaml`) |
 | `--service` | also install + enable the autostart service |
 | `--no-build` | skip building; use a prebuilt binary from `dist/` |
 
 The installer is idempotent — re-run it to upgrade the binary; an existing
 config is never overwritten. Remove everything with `./scripts/uninstall.sh`
-(add `--purge` to also delete `~/.the-loop`).
+(add `--purge` to also delete `~/.coloop`).
 
 ## Build
 
 For development. Requires Go 1.26+.
 
 ```sh
-make build            # -> bin/the-loop
+make build            # -> bin/coloop
 make dist             # cross-compiled binaries for darwin/linux amd64+arm64
 make test             # unit + integration tests
 make race             # tests under the race detector
@@ -81,8 +81,8 @@ make race             # tests under the race detector
 Copy the example and edit it:
 
 ```sh
-mkdir -p ~/.the-loop
-cp config.example.yaml ~/.the-loop/config.yaml
+mkdir -p ~/.coloop
+cp config.example.yaml ~/.coloop/config.yaml
 ```
 
 Key fields (see `config.example.yaml` for the full annotated reference):
@@ -104,14 +104,14 @@ rejected and the running config is kept.
 ## Run
 
 ```sh
-the-loop --config ~/.the-loop/config.yaml serve
+coloop --config ~/.coloop/config.yaml serve
 # open http://127.0.0.1:8765
 ```
 
 ### CLI
 
 ```
-the-loop [--config PATH] <command>
+coloop [--config PATH] <command>
 
   serve                       run the daemon (scheduler + API + UI)
   ls                          list tasks and their last status
@@ -131,14 +131,14 @@ the-loop [--config PATH] <command>
 pass, leaving the rest as-is. Examples:
 
 ```sh
-the-loop add --name nightly-build --type shell --cron "0 3 * * *" \
+coloop add --name nightly-build --type shell --cron "0 3 * * *" \
              --working-dir ~/proj --command ./build.sh --alert on_failure
-the-loop edit nightly-build --cron "0 4 * * *"
-the-loop rm nightly-build
+coloop edit nightly-build --cron "0 4 * * *"
+coloop rm nightly-build
 ```
 
 The client commands target the daemon over HTTP, resolving the address from
-`--addr`, `$LOOP_ADDR`, or the `listen` field of `--config`.
+`--addr`, `$COLOOP_ADDR`, or the `listen` field of `--config`.
 
 ### HTTP API
 
@@ -161,14 +161,14 @@ POST   /api/reload
 
 `./scripts/install.sh --service` is the easy path: it renders and enables a
 per-user **launchd** agent (macOS) or **systemd** user service (Linux) that runs
-`the-loop serve` with restart-on-crash and start-at-boot.
+`coloop serve` with restart-on-crash and start-at-boot.
 
 To wire it up by hand, see the header of the template for your platform:
 
-- **macOS (launchd):** [`deploy/com.theloop.the-loop.plist`](deploy/com.theloop.the-loop.plist)
-- **Linux (systemd):** [`deploy/the-loop.service`](deploy/the-loop.service)
+- **macOS (launchd):** [`deploy/com.coloop.coloop.plist`](deploy/com.coloop.coloop.plist)
+- **Linux (systemd):** [`deploy/coloop.service`](deploy/coloop.service)
 
-To migrate a machine, copy the binary and the `~/.the-loop/` directory — the
+To migrate a machine, copy the binary and the `~/.coloop/` directory — the
 schedule is rebuilt from `config.yaml`.
 
 ## Security

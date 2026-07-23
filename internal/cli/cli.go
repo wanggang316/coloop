@@ -1,4 +1,4 @@
-// Package cli implements the-loop's command-line client. It is a thin HTTP
+// Package cli implements coloop's command-line client. It is a thin HTTP
 // client over the daemon's JSON/SSE API; it never imports the engine or api
 // packages and talks to a running daemon purely over HTTP. The only offline
 // command is "validate", which loads and checks a config file directly.
@@ -21,8 +21,8 @@ import (
 	"text/tabwriter"
 	"time"
 
-	"github.com/wanggang316/the-loop/internal/config"
-	"github.com/wanggang316/the-loop/internal/model"
+	"github.com/wanggang316/coloop/internal/config"
+	"github.com/wanggang316/coloop/internal/model"
 )
 
 const defaultAddr = "http://127.0.0.1:8765"
@@ -61,18 +61,18 @@ func Dispatch(cmd string, args []string, cfgPath string) int {
 }
 
 func usage(w io.Writer) {
-	fmt.Fprint(w, `loop — control the-loop daemon
+	fmt.Fprint(w, `coloop — control coloop daemon
 
 usage:
-  loop ls                       list tasks
-  loop show <task>              print a task's definition and recent runs
-  loop add --name N --type T …  create a task from flags
-  loop edit <task> [flags]      change a task's fields (only the flags you pass)
-  loop rm <task>                delete a task (run history is kept)
-  loop run <task>               trigger a task, print the new run id
-  loop logs [-f] <task> [id]    show a run's log (latest run if id omitted; -f to follow)
-  loop validate [path]          validate a config file offline
-  loop reload                   ask the daemon to reload its config
+  coloop ls                       list tasks
+  coloop show <task>              print a task's definition and recent runs
+  coloop add --name N --type T …  create a task from flags
+  coloop edit <task> [flags]      change a task's fields (only the flags you pass)
+  coloop rm <task>                delete a task (run history is kept)
+  coloop run <task>               trigger a task, print the new run id
+  coloop logs [-f] <task> [id]    show a run's log (latest run if id omitted; -f to follow)
+  coloop validate [path]          validate a config file offline
+  coloop reload                   ask the daemon to reload its config
 
 task flags (add / edit):
   --name <s>          task name (on edit, renames the task)
@@ -90,7 +90,7 @@ task flags (add / edit):
   --enabled           set false to disable scheduling (--enabled=false)
 
 flags:
-  --addr <url>   daemon base URL (overrides LOOP_ADDR and config listen)
+  --addr <url>   daemon base URL (overrides COLOOP_ADDR and config listen)
 `)
 }
 
@@ -99,14 +99,14 @@ flags:
 // ---------------------------------------------------------------------------
 
 // resolveAddr picks the daemon base URL: explicit --addr flag wins, then the
-// LOOP_ADDR env var, then the listen address from the config file, and finally
+// COLOOP_ADDR env var, then the listen address from the config file, and finally
 // the built-in default. A bare host:port (e.g. ":8765") is normalised to an
 // http:// URL.
 func resolveAddr(flagAddr, cfgPath string) string {
 	if flagAddr != "" {
 		return normalizeAddr(flagAddr)
 	}
-	if env := os.Getenv("LOOP_ADDR"); env != "" {
+	if env := os.Getenv("COLOOP_ADDR"); env != "" {
 		return normalizeAddr(env)
 	}
 	if cfgPath != "" {
@@ -214,7 +214,7 @@ func httpError(resp *http.Response) error {
 
 // fail prints an error to stderr and returns a non-zero exit code.
 func fail(format string, a ...any) int {
-	fmt.Fprintf(os.Stderr, "loop: "+format+"\n", a...)
+	fmt.Fprintf(os.Stderr, "coloop: "+format+"\n", a...)
 	return 1
 }
 
@@ -487,7 +487,7 @@ func runEdit(args []string, cfgPath string) int {
 		return fail("edit: %v", err)
 	}
 	if name == "" {
-		return fail("edit: expected a task name (loop edit <task> [flags])")
+		return fail("edit: expected a task name (coloop edit <task> [flags])")
 	}
 	base := resolveAddr(*addr, cfgPath)
 

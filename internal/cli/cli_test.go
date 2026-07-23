@@ -8,7 +8,7 @@ import (
 	"reflect"
 	"testing"
 
-	"github.com/wanggang316/the-loop/internal/model"
+	"github.com/wanggang316/coloop/internal/model"
 )
 
 // TestAddPostsTask checks that `add` turns its flags into a POST /api/tasks with

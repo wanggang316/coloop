@@ -1,4 +1,4 @@
-module github.com/wanggang316/the-loop
+module github.com/wanggang316/coloop
 
 go 1.26.2
 

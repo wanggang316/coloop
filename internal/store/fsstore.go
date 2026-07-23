@@ -13,7 +13,7 @@ import (
 	"sync"
 	"time"
 
-	"github.com/wanggang316/the-loop/internal/model"
+	"github.com/wanggang316/coloop/internal/model"
 )
 
 // FSStore is a filesystem-backed implementation of Store. A single daemon owns

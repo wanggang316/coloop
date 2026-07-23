@@ -1,4 +1,4 @@
-// Package api exposes the-loop's HTTP surface: a small JSON API over the
+// Package api exposes coloop's HTTP surface: a small JSON API over the
 // engine plus the embedded single-page admin UI. It owns transport concerns
 // only and delegates all behaviour to *engine.Engine.
 package api
@@ -14,8 +14,8 @@ import (
 	"strconv"
 	"strings"
 
-	"github.com/wanggang316/the-loop/internal/engine"
-	"github.com/wanggang316/the-loop/internal/model"
+	"github.com/wanggang316/coloop/internal/engine"
+	"github.com/wanggang316/coloop/internal/model"
 )
 
 // New builds the HTTP handler. ui serves the embedded SPA; reload is the hook

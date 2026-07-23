@@ -14,7 +14,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/wanggang316/the-loop/internal/model"
+	"github.com/wanggang316/coloop/internal/model"
 )
 
 func TestShouldAlert(t *testing.T) {

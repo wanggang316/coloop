@@ -5,7 +5,7 @@ import (
 	"io"
 	"os/exec"
 
-	"github.com/wanggang316/the-loop/internal/model"
+	"github.com/wanggang316/coloop/internal/model"
 )
 
 // defaultShell is used when no shell is configured.

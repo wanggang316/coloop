@@ -1,27 +1,27 @@
-# systemd unit for the-loop (Linux, per-user service).
+# systemd unit for coloop (Linux, per-user service).
 #
 # Recommended: let the installer render and enable this for you:
 #   ./scripts/install.sh --service
 #
 # Manual install: replace the @TOKENS@ below, then enable it:
-#   @BIN@      -> absolute path to the installed binary (e.g. /usr/local/bin/the-loop)
-#   @CONFIG@   -> absolute path to your config         (e.g. /home/you/.the-loop/config.yaml)
+#   @BIN@      -> absolute path to the installed binary (e.g. /usr/local/bin/coloop)
+#   @CONFIG@   -> absolute path to your config         (e.g. /home/you/.coloop/config.yaml)
 #   @PATH@     -> PATH for the daemon, so agent runners like `claude`/`codex` resolve
 #                (systemd hands services only a minimal PATH otherwise)
 #
 #   mkdir -p ~/.config/systemd/user
-#   cp deploy/the-loop.service ~/.config/systemd/user/the-loop.service
+#   cp deploy/coloop.service ~/.config/systemd/user/coloop.service
 #   systemctl --user daemon-reload
-#   systemctl --user enable --now the-loop
+#   systemctl --user enable --now coloop
 #   loginctl enable-linger "$USER"   # keep it running after you log out / at boot
-#   journalctl --user -u the-loop -f
+#   journalctl --user -u coloop -f
 #
 # Prefer a system-wide service (runs as root, starts before login)? Drop this
 # file in /etc/systemd/system/, change WantedBy to multi-user.target, point
-# @CONFIG@ at /etc/the-loop/config.yaml, and use `sudo systemctl enable --now`.
+# @CONFIG@ at /etc/coloop/config.yaml, and use `sudo systemctl enable --now`.
 
 [Unit]
-Description=the-loop scheduled task daemon
+Description=coloop scheduled task daemon
 After=network.target
 
 [Service]

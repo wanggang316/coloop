@@ -10,10 +10,10 @@ import (
 	"testing"
 	"time"
 
-	"github.com/wanggang316/the-loop/internal/executor"
-	"github.com/wanggang316/the-loop/internal/model"
-	"github.com/wanggang316/the-loop/internal/notify"
-	"github.com/wanggang316/the-loop/internal/store"
+	"github.com/wanggang316/coloop/internal/executor"
+	"github.com/wanggang316/coloop/internal/model"
+	"github.com/wanggang316/coloop/internal/notify"
+	"github.com/wanggang316/coloop/internal/store"
 )
 
 // pollUntil spins on cond up to a short deadline, failing the test if it never

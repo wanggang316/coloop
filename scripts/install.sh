@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 #
-# install.sh — build and install the-loop, seed its config, and optionally set
+# install.sh — build and install coloop, seed its config, and optionally set
 # up start-at-boot via launchd (macOS) or a per-user systemd service (Linux).
 #
 # Usage:
@@ -8,7 +8,7 @@
 #
 # Options:
 #   --prefix DIR    install the binary into DIR/bin            (default: /usr/local)
-#   --config PATH   config file to seed / point the service at (default: ~/.the-loop/config.yaml)
+#   --config PATH   config file to seed / point the service at (default: ~/.coloop/config.yaml)
 #   --service       also install and enable the autostart service
 #   --no-build      skip building; use a prebuilt binary from dist/
 #   -h, --help      show this help and exit
@@ -25,8 +25,8 @@ PREFIX="/usr/local"
 CONFIG=""
 WITH_SERVICE=0
 NO_BUILD=0
-LABEL="com.theloop.the-loop"
-BINARY="the-loop"
+LABEL="com.coloop.coloop"
+BINARY="coloop"
 
 # ---- output helpers ----------------------------------------------------------
 if [ -t 1 ] && [ -z "${NO_COLOR:-}" ]; then
@@ -55,7 +55,7 @@ done
 
 # Default config under the invoking user's home, with ~ expanded.
 if [ -z "$CONFIG" ]; then
-  CONFIG="$HOME/.the-loop/config.yaml"
+  CONFIG="$HOME/.coloop/config.yaml"
 else
   case "$CONFIG" in "~"/*) CONFIG="$HOME/${CONFIG#\~/}" ;; esac
 fi
@@ -124,8 +124,8 @@ trap cleanup EXIT
 
 if [ "$NO_BUILD" -eq 0 ] && command -v go >/dev/null 2>&1; then
   info "Building $BINARY from source (go build)"
-  TMP_BIN="$(mktemp -t the-loop.XXXXXX)"
-  ( cd "$REPO_ROOT" && go build -ldflags "-s -w" -o "$TMP_BIN" ./cmd/the-loop )
+  TMP_BIN="$(mktemp -t coloop.XXXXXX)"
+  ( cd "$REPO_ROOT" && go build -ldflags "-s -w" -o "$TMP_BIN" ./cmd/coloop )
   SRC_BIN="$TMP_BIN"
   ok "built $(go version | awk '{print $3}')"
 else
@@ -166,13 +166,13 @@ service_path() {
 
 install_launchd() {
   local plist="$HOME/Library/LaunchAgents/$LABEL.plist"
-  local log="$CONFIG_DIR/the-loop.log"
+  local log="$CONFIG_DIR/coloop.log"
   local svc_path; svc_path="$(service_path)"
   info "Installing launchd agent -> $plist"
   mkdir -p "$HOME/Library/LaunchAgents"
   sed -e "s|@BIN@|$(sed_repl "$BIN_PATH")|g" -e "s|@CONFIG@|$(sed_repl "$CONFIG")|g" \
       -e "s|@LOG@|$(sed_repl "$log")|g" -e "s|@PATH@|$(sed_repl "$svc_path")|g" \
-    "$REPO_ROOT/deploy/com.theloop.the-loop.plist" > "$plist"
+    "$REPO_ROOT/deploy/com.coloop.coloop.plist" > "$plist"
   launchctl unload "$plist" >/dev/null 2>&1 || true   # ignore "not loaded"
   launchctl load -w "$plist"
   ok "loaded; logs at $log"
@@ -180,22 +180,22 @@ install_launchd() {
 
 install_systemd_user() {
   local unit_dir="$HOME/.config/systemd/user"
-  local unit="$unit_dir/the-loop.service"
+  local unit="$unit_dir/coloop.service"
   local svc_path; svc_path="$(service_path)"
   command -v systemctl >/dev/null 2>&1 || die "systemctl not found; this Linux has no systemd (set up autostart manually)"
   info "Installing systemd user service -> $unit"
   mkdir -p "$unit_dir"
   sed -e "s|@BIN@|$(sed_repl "$BIN_PATH")|g" -e "s|@CONFIG@|$(sed_repl "$CONFIG")|g" \
       -e "s|@PATH@|$(sed_repl "$svc_path")|g" \
-    "$REPO_ROOT/deploy/the-loop.service" > "$unit"
+    "$REPO_ROOT/deploy/coloop.service" > "$unit"
   systemctl --user daemon-reload
-  systemctl --user enable --now the-loop
+  systemctl --user enable --now coloop
   if loginctl enable-linger "$USER" >/dev/null 2>&1; then
     ok "enabled; lingering on so it survives logout/boot"
   else
     warn "could not enable lingering; run 'sudo loginctl enable-linger $USER' for start-at-boot"
   fi
-  ok "started; logs via 'journalctl --user -u the-loop -f'"
+  ok "started; logs via 'journalctl --user -u coloop -f'"
 }
 
 if [ "$WITH_SERVICE" -eq 1 ]; then

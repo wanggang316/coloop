@@ -1,4 +1,4 @@
-// Package model holds the core domain types shared across the-loop.
+// Package model holds the core domain types shared across coloop.
 // It has no external dependencies and is the frozen contract every other
 // package builds against.
 package model
@@ -173,11 +173,11 @@ type Event struct {
 
 // Config is the top-level configuration loaded from config.yaml.
 type Config struct {
-	Listen    string         `yaml:"listen"`    // HTTP listen address, e.g. ":8765"
-	Shell     string         `yaml:"shell"`     // default shell for shell tasks
-	DataDir   string         `yaml:"data_dir"`  // base dir for runs/ (default: dir of config)
-	Tasks     []Task         `yaml:"tasks"`     // task definitions
-	Runners   []AgentRunner  `yaml:"runners"`   // reusable agent command templates, referenced by Task.Runner
+	Listen  string        `yaml:"listen"`   // HTTP listen address, e.g. ":8765"
+	Shell   string        `yaml:"shell"`    // default shell for shell tasks
+	DataDir string        `yaml:"data_dir"` // base dir for runs/ (default: dir of config)
+	Tasks   []Task        `yaml:"tasks"`    // task definitions
+	Runners []AgentRunner `yaml:"runners"`  // reusable agent command templates, referenced by Task.Runner
 
 	// NotifierChannels is the named alert-channel registry tasks select from via
 	// Task.Notifiers. Notifiers is the legacy single-channel block; on load it is

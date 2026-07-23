@@ -1,4 +1,4 @@
-/* the-loop admin UI — follows docs/DESIGN.md (dark, monochrome-first, no build).
+/* coloop admin UI — follows docs/DESIGN.md (dark, monochrome-first, no build).
    Grayscale carries hierarchy; color is a signal only (status, brand, error).
    Type scale is 12 / 14 / 16 px; weights 400 / 500 only; separation via border
    and spacing, never decorative shadow. Tokens are OKLCh so the neutral scale is

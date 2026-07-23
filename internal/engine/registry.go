@@ -5,7 +5,7 @@
 // commitLocked) so concurrent reads never observe a half-applied change.
 package engine
 
-import "github.com/wanggang316/the-loop/internal/model"
+import "github.com/wanggang316/coloop/internal/model"
 
 // ListRunners returns a copy of the configured agent runners. The result is
 // always non-nil so the JSON API emits [] rather than null for an empty list.

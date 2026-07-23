@@ -10,7 +10,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/wanggang316/the-loop/internal/model"
+	"github.com/wanggang316/coloop/internal/model"
 )
 
 // defaultTelegramAPIBase is the public Bot API host, used when the config does

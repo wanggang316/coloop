@@ -9,8 +9,8 @@ import (
 	"errors"
 	"fmt"
 
-	"github.com/wanggang316/the-loop/internal/config"
-	"github.com/wanggang316/the-loop/internal/model"
+	"github.com/wanggang316/coloop/internal/config"
+	"github.com/wanggang316/coloop/internal/model"
 )
 
 // ErrDuplicate is returned when a create/rename targets an existing task name.

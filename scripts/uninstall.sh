@@ -1,15 +1,15 @@
 #!/usr/bin/env bash
 #
-# uninstall.sh — stop and remove the-loop: the autostart service and the binary.
-# Run records and config under ~/.the-loop are kept unless you pass --purge.
+# uninstall.sh — stop and remove coloop: the autostart service and the binary.
+# Run records and config under ~/.coloop are kept unless you pass --purge.
 #
 # Usage:
 #   ./scripts/uninstall.sh [options]
 #
 # Options:
 #   --prefix DIR    where the binary was installed              (default: /usr/local)
-#   --config PATH   config/data location (for --purge)          (default: ~/.the-loop/config.yaml)
-#   --purge         also delete the config and run records (~/.the-loop)
+#   --config PATH   config/data location (for --purge)          (default: ~/.coloop/config.yaml)
+#   --purge         also delete the config and run records (~/.coloop)
 #   -h, --help      show this help and exit
 set -euo pipefail
 
@@ -17,8 +17,8 @@ set -euo pipefail
 PREFIX="/usr/local"
 CONFIG=""
 PURGE=0
-LABEL="com.theloop.the-loop"
-BINARY="the-loop"
+LABEL="com.coloop.coloop"
+BINARY="coloop"
 
 # ---- output helpers ----------------------------------------------------------
 if [ -t 1 ] && [ -z "${NO_COLOR:-}" ]; then
@@ -45,7 +45,7 @@ while [ $# -gt 0 ]; do
 done
 
 if [ -z "$CONFIG" ]; then
-  CONFIG="$HOME/.the-loop/config.yaml"
+  CONFIG="$HOME/.coloop/config.yaml"
 else
   case "$CONFIG" in "~"/*) CONFIG="$HOME/${CONFIG#\~/}" ;; esac
 fi
@@ -112,10 +112,10 @@ case "$OS" in
     fi
     ;;
   linux)
-    unit="$HOME/.config/systemd/user/the-loop.service"
+    unit="$HOME/.config/systemd/user/coloop.service"
     if [ -f "$unit" ] && command -v systemctl >/dev/null 2>&1; then
       info "Removing systemd user service"
-      systemctl --user disable --now the-loop >/dev/null 2>&1 || true
+      systemctl --user disable --now coloop >/dev/null 2>&1 || true
       rm -f "$unit"
       systemctl --user daemon-reload >/dev/null 2>&1 || true
       ok "removed $unit"
@@ -146,4 +146,4 @@ else
 fi
 
 echo
-ok "the-loop uninstalled."
+ok "coloop uninstalled."

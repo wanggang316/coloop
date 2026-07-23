@@ -1,10 +1,10 @@
 # build output
 /bin/
 /dist/
-/the-loop
+/coloop
 
 # local runtime data & logs
-/.the-loop/
+/.coloop/
 *.log
 
 # editor / OS cruft

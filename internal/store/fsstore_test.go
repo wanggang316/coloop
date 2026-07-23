@@ -12,7 +12,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/wanggang316/the-loop/internal/model"
+	"github.com/wanggang316/coloop/internal/model"
 )
 
 // newStore builds an FSStore rooted at a fresh temp dir.
