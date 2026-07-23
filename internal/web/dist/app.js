@@ -950,6 +950,231 @@ function renderDetail(root, name) {
 }
 
 // ========================================================================
+// Claude Code stream-json transcript formatting
+// ========================================================================
+//
+// `claude -p --output-format stream-json` emits one JSON object per log line.
+// Most are noise for a human (per-token counters, hook lifecycle, rate-limit
+// pings); the formatted view keeps only the meaningful timeline — session
+// header, assistant prose, tool calls + their results, sub-task lifecycle, and
+// the final result — and drops the rest. A line that is not a recognised event
+// falls back to a verbatim raw line, so non-Claude logs still render.
+
+const CLAUDE_EVENT_TYPES = new Set(['system', 'assistant', 'user', 'result', 'rate_limit_event']);
+
+// tryParseJSON returns the parsed object for a JSON line, or null for anything
+// that is not a JSON object/array (cheap first-char guard before JSON.parse).
+function tryParseJSON(s) {
+  const t = String(s == null ? '' : s).trim();
+  if (!t || (t[0] !== '{' && t[0] !== '[')) return null;
+  try { return JSON.parse(t); } catch (_) { return null; }
+}
+
+function isClaudeEvent(o) {
+  return !!o && typeof o === 'object' && typeof o.type === 'string' && CLAUDE_EVENT_TYPES.has(o.type);
+}
+
+// firstLine collapses a multi-line string to its first line with an ellipsis,
+// for compact one-line tool summaries.
+function firstLine(s) {
+  s = String(s == null ? '' : s);
+  const nl = s.indexOf('\n');
+  return nl < 0 ? s : s.slice(0, nl) + ' …';
+}
+
+// TOOL_ARG maps a tool name to its most meaningful one-line argument.
+const TOOL_ARG = {
+  Bash: (i) => i.command,
+  Read: (i) => i.file_path,
+  Edit: (i) => i.file_path,
+  MultiEdit: (i) => i.file_path,
+  Write: (i) => i.file_path,
+  NotebookEdit: (i) => i.notebook_path || i.file_path,
+  Glob: (i) => i.pattern,
+  Grep: (i) => i.pattern + (i.path ? '  ' + i.path : ''),
+  Task: (i) => (i.subagent_type ? '[' + i.subagent_type + '] ' : '') + (i.description || ''),
+  Agent: (i) => (i.subagent_type ? '[' + i.subagent_type + '] ' : '') + (i.description || ''),
+  WebFetch: (i) => i.url,
+  WebSearch: (i) => i.query,
+  Skill: (i) => i.command || i.skill,
+  TaskCreate: (i) => i.description || i.title,
+  TaskUpdate: (i) => i.description || i.title || i.task_id,
+};
+
+function toolSummary(name, input) {
+  input = input || {};
+  const pick = TOOL_ARG[name];
+  let v = pick ? pick(input) : undefined;
+  if (v == null) {
+    for (const k of Object.keys(input)) {
+      if (typeof input[k] === 'string') { v = input[k]; break; }
+    }
+    if (v == null) { try { v = JSON.stringify(input); } catch (_) { v = ''; } }
+  }
+  return firstLine(v);
+}
+
+// toolInputDetail renders a tool's full input for the collapsible "input"
+// section: a bare command reads better raw than JSON-escaped; everything else
+// is pretty-printed JSON.
+function toolInputDetail(input) {
+  if (input && typeof input === 'object' && typeof input.command === 'string') {
+    return input.command + (input.description ? '\n\n(' + input.description + ')' : '');
+  }
+  try { return JSON.stringify(input, null, 2); } catch (_) { return String(input); }
+}
+
+// toolResultText normalises a tool_result `content` (string or block array) to text.
+function toolResultText(content) {
+  if (content == null) return '';
+  if (typeof content === 'string') return content;
+  if (Array.isArray(content)) {
+    return content.map((b) => (b && typeof b === 'object')
+      ? (b.type === 'text' ? (b.text || '') : (b.text || JSON.stringify(b)))
+      : String(b)).join('\n');
+  }
+  try { return JSON.stringify(content); } catch (_) { return String(content); }
+}
+
+function fmtMs(ms) {
+  if (!(ms > 0)) return '0ms';
+  if (ms < 1000) return Math.round(ms) + 'ms';
+  const s = ms / 1000;
+  if (s < 60) return s.toFixed(1) + 's';
+  const m = Math.floor(s / 60), rem = Math.round(s % 60);
+  return m + 'm ' + rem + 's';
+}
+
+// collapsible builds a <details> disclosure with a preformatted body.
+function collapsible(summaryText, bodyText, error) {
+  return el('details', { class: 'ev-collapse' },
+    el('summary', null, summaryText),
+    el('pre', { class: 'ev-pre' + (error ? ' error' : '') }, bodyText));
+}
+
+// createTranscript renders Claude Code events into a scroll container via the
+// supplied sink { place(node), appendResult(mount, node) }. It keeps a map of
+// tool_use id → result mount so a later tool_result attaches under its call.
+function createTranscript(sink) {
+  let toolCards = new Map();
+  function reset() { toolCards = new Map(); }
+
+  function renderInit(o) {
+    const bits = [];
+    if (o.model) bits.push(o.model);
+    if (Array.isArray(o.tools)) bits.push(o.tools.length + ' tools');
+    if (o.permissionMode) bits.push(o.permissionMode);
+    const details = [];
+    if (o.cwd) details.push('cwd: ' + o.cwd);
+    if (o.session_id) details.push('session: ' + o.session_id);
+    if (Array.isArray(o.mcp_servers) && o.mcp_servers.length) {
+      details.push('mcp: ' + o.mcp_servers.map((m) => m.name + (m.status ? '(' + m.status + ')' : '')).join(', '));
+    }
+    if (Array.isArray(o.tools)) details.push('tools: ' + o.tools.join(', '));
+    sink.place(el('div', { class: 'ev ev-init' },
+      el('div', { class: 'ev-init-head' },
+        el('span', { class: 'ev-kind' }, 'session'),
+        el('span', { class: 'mono dim' }, bits.join(' · '))),
+      details.length ? collapsible('details', details.join('\n')) : null));
+  }
+
+  function renderAssistant(o) {
+    const content = (o.message && o.message.content) || [];
+    for (const b of content) {
+      if (!b || typeof b !== 'object') continue;
+      if (b.type === 'text') {
+        if ((b.text || '').trim()) sink.place(el('div', { class: 'ev ev-text' }, b.text));
+      } else if (b.type === 'thinking') {
+        if ((b.thinking || '').trim()) {
+          sink.place(el('div', { class: 'ev ev-thinking' }, collapsible('thinking', b.thinking)));
+        }
+      } else if (b.type === 'tool_use') {
+        renderToolUse(b);
+      }
+    }
+  }
+
+  function renderToolUse(tu) {
+    const name = tu.name || 'tool';
+    const summary = toolSummary(name, tu.input);
+    const full = toolInputDetail(tu.input);
+    const resultMount = el('div', { class: 'tool-result' });
+    const showDetails = full && (full.length > 80 || full.indexOf('\n') >= 0);
+    const card = el('div', { class: 'ev ev-tool' },
+      el('div', { class: 'tool-head' },
+        el('span', { class: 'tool-name' }, name),
+        summary ? el('span', { class: 'tool-arg mono' }, summary) : null),
+      showDetails ? collapsible('input', full) : null,
+      resultMount);
+    if (tu.id) toolCards.set(tu.id, resultMount);
+    sink.place(card);
+  }
+
+  function renderUser(o) {
+    const content = (o.message && o.message.content) || [];
+    for (const b of content) {
+      if (b && typeof b === 'object' && b.type === 'tool_result') renderToolResult(b);
+    }
+  }
+
+  function renderToolResult(tr) {
+    const text = toolResultText(tr.content);
+    const lines = text.split('\n');
+    const truncated = lines.length > 12 || text.length > 1200;
+    const node = truncated
+      ? collapsible((tr.is_error ? 'error · ' : '') + 'output (' + lines.length + ' lines)', text, tr.is_error)
+      : el('pre', { class: 'ev-pre' + (tr.is_error ? ' error' : '') }, text || '(no output)');
+    const mount = tr.tool_use_id && toolCards.get(tr.tool_use_id);
+    if (mount) sink.appendResult(mount, node);
+    else sink.place(el('div', { class: 'ev ev-tool orphan' }, el('div', { class: 'tool-result' }, node)));
+  }
+
+  function renderSystem(o) {
+    if (o.subtype === 'init') return renderInit(o);
+    if (o.subtype === 'task_started') {
+      return sink.place(el('div', { class: 'ev ev-task' },
+        el('span', { class: 'ev-kind' }, 'task'),
+        el('span', null, o.description || o.task_id || '')));
+    }
+    if (o.subtype === 'task_notification') {
+      const done = o.status === 'completed';
+      return sink.place(el('div', { class: 'ev ev-task' + (done ? ' done' : '') },
+        el('span', { class: 'ev-kind' }, 'task ' + (o.status || '')),
+        el('span', null, o.summary || '')));
+    }
+    // hook_started / hook_response / thinking_tokens / … → noise, skip.
+  }
+
+  function renderResult(o) {
+    const err = o.is_error || o.subtype === 'error';
+    const metrics = [];
+    if (o.duration_ms != null) metrics.push(fmtMs(o.duration_ms));
+    if (o.num_turns != null) metrics.push(o.num_turns + ' turns');
+    if (o.total_cost_usd != null) metrics.push('$' + Number(o.total_cost_usd).toFixed(4));
+    const body = (o.result != null && String(o.result).trim())
+      ? el('div', { class: 'ev-text result-text' }, String(o.result))
+      : null;
+    sink.place(el('div', { class: 'ev result-card' },
+      el('div', { class: 'result-head' },
+        el('span', { class: 'badge ' + (err ? 'failed' : 'success') }, err ? 'error' : 'success'),
+        metrics.length ? el('span', { class: 'dim', style: 'font-size:12px' }, metrics.join('  ·  ')) : null),
+      body));
+  }
+
+  function render(o) {
+    switch (o.type) {
+      case 'system': return renderSystem(o);
+      case 'assistant': return renderAssistant(o);
+      case 'user': return renderUser(o);
+      case 'result': return renderResult(o);
+      default: return; // rate_limit_event & unknown → skip
+    }
+  }
+
+  return { render, reset };
+}
+
+// ========================================================================
 // VIEW 3 — live log view
 // ========================================================================
 
@@ -965,10 +1190,22 @@ function renderLog(root, name, id) {
   let retries = 0;
   let retryTimer = null;
 
+  // View mode: 'formatted' renders Claude Code stream-json as a transcript;
+  // 'raw' shows every line verbatim. Auto-picked from the first content line,
+  // overridable by the segmented toggle. `entries` is the ordered source of
+  // truth so switching modes replays the whole run cleanly.
+  let mode = null;
+  let userPinnedMode = false;
+  const entries = []; // { kind:'content'|'meta', text, sys? }
+
   const autoScrollBox = el('input', { type: 'checkbox', checked: true });
+  const fmtBtn = el('button', { type: 'button', class: 'seg-btn', onclick: () => setMode('formatted', true) }, 'Formatted');
+  const rawBtn = el('button', { type: 'button', class: 'seg-btn', onclick: () => setMode('raw', true) }, 'Raw');
+  const seg = el('div', { class: 'seg' }, fmtBtn, rawBtn);
   const head = el('div', { class: 'log-head' },
     el('h1', { style: 'font-size:16px;margin:0' }, `${name} · run #${id}`),
     el('span', { class: 'spacer' }),
+    seg,
     el('label', { class: 'toggle' }, autoScrollBox, 'auto-scroll'),
     el('span', { class: 'log-state', id: 'logState' },
       el('span', { class: 'dot', id: 'logDot' }), el('span', { id: 'logStateText' }, 'connecting…')));
@@ -976,27 +1213,110 @@ function renderLog(root, name, id) {
   const box = el('div', { class: 'logbox', id: 'logbox' });
   root.append(el('div', { class: 'page-head', style: 'margin-bottom:8px' }, head), box);
 
+  // place appends a rendered node, keeping the view pinned to the bottom while
+  // auto-scroll is on and the user has not scrolled up. appendResult does the
+  // same when a tool_result is grafted into an already-rendered tool card.
+  function place(node) {
+    if (!node) return;
+    const atBottom = box.scrollHeight - box.scrollTop - box.clientHeight < 60;
+    box.append(node);
+    if (autoScrollBox.checked && (atBottom || !gotAny)) box.scrollTop = box.scrollHeight;
+    gotAny = true;
+  }
+  function appendResult(mount, node) {
+    const atBottom = box.scrollHeight - box.scrollTop - box.clientHeight < 60;
+    mount.append(node);
+    if (autoScrollBox.checked && atBottom) box.scrollTop = box.scrollHeight;
+    gotAny = true;
+  }
+  const transcript = createTranscript({ place, appendResult });
+
+  function updateSeg() {
+    fmtBtn.classList.toggle('active', mode === 'formatted');
+    rawBtn.classList.toggle('active', mode === 'raw');
+  }
+
+  function renderMeta(text, sys) {
+    place(el('div', { class: 'log-meta' + (sys ? ' sys' : '') }, text === '' ? ' ' : text));
+  }
+
+  function renderContentNode(text) {
+    if (mode === 'formatted') {
+      const o = tryParseJSON(text);
+      if (isClaudeEvent(o)) { transcript.render(o); return; }
+    }
+    place(el('span', { class: 'ln' }, text === '' ? ' ' : text));
+  }
+
+  function rebuild() {
+    clear(box);
+    gotAny = false;
+    transcript.reset();
+    for (const e of entries) {
+      if (e.kind === 'meta') renderMeta(e.text, e.sys);
+      else renderContentNode(e.text);
+    }
+  }
+
+  function setMode(m, byUser) {
+    if (byUser) userPinnedMode = true;
+    if (mode === m) return;
+    mode = m;
+    updateSeg();
+    rebuild();
+  }
+
+  // pushContent records and renders one real log line from the run.
+  function pushContent(text) {
+    entries.push({ kind: 'content', text });
+    gotData = true;
+    if (mode === null) {
+      mode = isClaudeEvent(tryParseJSON(text)) ? 'formatted' : 'raw';
+      updateSeg();
+    } else if (mode === 'raw' && !userPinnedMode && entries.length <= 10 && isClaudeEvent(tryParseJSON(text))) {
+      // An early non-JSON banner mis-detected the run as raw; the first real
+      // event upgrades it to formatted (replaying what we have).
+      setMode('formatted', false);
+      return;
+    }
+    renderContentNode(text);
+  }
+
+  // pushMeta records and renders a transient status message (connect, finished,
+  // errors) that survives a mode switch alongside the run's own output.
+  function pushMeta(text) {
+    entries.push({ kind: 'meta', text, sys: true });
+    renderMeta(text, true);
+  }
+
+  // resetTranscript drops all buffered lines and clears the box, preserving the
+  // chosen view mode. Used on reconnect (server replays from the start) and
+  // before loading the static log.
+  function resetTranscript() {
+    entries.length = 0;
+    transcript.reset();
+    clear(box);
+    gotAny = false;
+  }
+
   function setState(text, cls) {
     const dot = $('#logDot'), st = $('#logStateText');
     if (dot) dot.className = 'dot' + (cls ? ' ' + cls : '');
     if (st) st.textContent = text;
   }
 
+  // appendLine keeps the SSE/static call sites unchanged: system/status lines
+  // (sys=true) become meta entries; everything else is a run content line.
   function appendLine(text, sys) {
-    const atBottom = box.scrollHeight - box.scrollTop - box.clientHeight < 40;
-    box.append(el('span', { class: 'ln' + (sys ? ' sys' : '') }, text === '' ? ' ' : text));
-    if (autoScrollBox && autoScrollBox.checked && (atBottom || !gotAny)) {
-      box.scrollTop = box.scrollHeight;
-    }
-    gotAny = true;
+    if (sys) pushMeta(text);
+    else pushContent(text);
   }
 
   // Fallback: fetch the full static log (finished runs, or if SSE unavailable).
   async function loadStaticLog() {
     try {
       const text = await Tasks.runLog(name, id);
-      clear(box);
-      gotAny = false;
+      resetTranscript();
       const lines = String(text).replace(/\n$/, '').split('\n');
       if (lines.length === 1 && lines[0] === '') {
         appendLine('(empty log)', true);
@@ -1019,8 +1339,8 @@ function renderLog(root, name, id) {
   function openStream(reconnect) {
     setState(reconnect ? 'reconnecting…' : 'live', reconnect ? '' : 'live');
     // The server replays from the start on every connect, so on a reconnect we
-    // clear the box to avoid duplicating already-rendered lines.
-    if (reconnect) { clear(box); gotData = false; }
+    // drop what we have to avoid duplicating already-rendered lines.
+    if (reconnect) { resetTranscript(); gotData = false; }
     const url = `/api/tasks/${encodeURIComponent(name)}/runs/${encodeURIComponent(id)}/stream`;
     es = new EventSource(url);
 

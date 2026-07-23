@@ -14,7 +14,10 @@ alerts to Feishu and Telegram.
 - **Schedule or trigger** — standard 5-field cron expressions for automatic
   runs, plus manual one-click / one-command triggers.
 - **Observable** — embedded web UI with three views (task list, task detail,
-  live log) backed by a JSON REST + SSE API.
+  live log) backed by a JSON REST + SSE API. Claude Code agent runs
+  (`--output-format stream-json`) render as a formatted transcript — session
+  header, assistant messages, tool calls with their results, and a final
+  result card — with a one-click switch back to the raw line view.
 - **Alerts** — named Feishu (webhook or CLI) and Telegram channels defined
   once and selected per task, gated by an
   `on_failure` / `on_success` / `always` / `never` policy.

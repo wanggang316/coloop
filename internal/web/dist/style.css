@@ -334,6 +334,76 @@ td.mono, .mono { font-family: var(--font-mono); }
 label.toggle { display: inline-flex; align-items: center; gap: 6px; color: var(--muted-foreground); font-size: 12px; cursor: pointer; user-select: none; }
 label.toggle input { accent-color: var(--primary); }
 
+/* ---------- formatted transcript (Claude Code stream-json) ---------- */
+/* A segmented Formatted/Raw switch in the log header. */
+.seg { display: inline-flex; border: 1px solid var(--border-strong); border-radius: var(--radius-md); overflow: hidden; }
+.seg-btn {
+  font: inherit; font-size: 12px; color: var(--muted-foreground);
+  background: transparent; border: none; padding: 4px 10px; cursor: pointer;
+  transition: background .15s ease, color .15s ease;
+}
+.seg-btn + .seg-btn { border-left: 1px solid var(--border); }
+.seg-btn:hover { color: var(--foreground); background: var(--hover); }
+.seg-btn.active { color: var(--foreground); background: var(--selected); font-weight: 500; }
+
+/* transient status lines (connecting / finished / errors) */
+.logbox .log-meta { display: block; color: var(--muted-foreground); }
+.logbox .log-meta.sys { color: var(--faint-foreground); font-style: italic; }
+
+/* each structured event is a sans-serif block with breathing room */
+.logbox .ev { font-family: var(--font-sans); font-size: 13px; line-height: 1.55; margin: 10px 0; }
+.logbox .ev:first-child { margin-top: 0; }
+.ev-kind {
+  display: inline-block; font-family: var(--font-mono); font-size: 11px;
+  text-transform: uppercase; letter-spacing: .4px; color: var(--faint-foreground);
+  margin-right: 8px;
+}
+
+/* assistant prose + final result text */
+.ev-text { color: var(--code-fg); white-space: pre-wrap; word-break: break-word; }
+.result-text { margin-top: 8px; }
+
+/* session init header */
+.ev-init { border-left: 2px solid var(--border-strong); padding-left: 10px; }
+.ev-init-head { display: flex; align-items: baseline; gap: 4px; flex-wrap: wrap; }
+
+/* tool call card */
+.ev-tool {
+  border: 1px solid var(--border); border-radius: var(--radius-md);
+  background: var(--card); padding: 8px 10px;
+}
+.ev-tool.orphan { border-style: dashed; }
+.tool-head { display: flex; align-items: baseline; gap: 8px; flex-wrap: wrap; }
+.tool-name {
+  font-family: var(--font-mono); font-size: 12px; color: var(--foreground);
+  background: var(--elevated); border: 1px solid var(--border);
+  border-radius: var(--radius-sm); padding: 1px 7px; flex: 0 0 auto;
+}
+.tool-arg { color: var(--muted-foreground); word-break: break-word; }
+.tool-result:not(:empty) { margin-top: 8px; }
+
+/* sub-agent (Task) lifecycle */
+.ev-task { color: var(--muted-foreground); display: flex; gap: 8px; align-items: baseline; flex-wrap: wrap; }
+.ev-task.done .ev-kind { color: var(--success); }
+
+/* collapsibles (thinking / input / long output) + preformatted bodies */
+.ev-collapse { margin-top: 6px; }
+.ev-collapse > summary { cursor: pointer; color: var(--muted-foreground); font-size: 12px; user-select: none; }
+.ev-collapse > summary:hover { color: var(--foreground); }
+.ev-thinking > .ev-collapse > summary { font-style: italic; color: var(--faint-foreground); }
+.ev-pre {
+  font-family: var(--font-mono); font-size: 12px; line-height: 1.5;
+  color: var(--code-fg); background: var(--code-bg);
+  border: 1px solid var(--border); border-radius: var(--radius-sm);
+  padding: 8px 10px; margin: 6px 0 0;
+  white-space: pre-wrap; word-break: break-word; overflow-x: auto; max-height: 360px;
+}
+.ev-pre.error { color: var(--destructive); border-color: color-mix(in oklch, var(--destructive) 35%, transparent); }
+
+/* final result card */
+.result-card { border: 1px solid var(--border-strong); border-radius: var(--radius-lg); background: var(--card); padding: 12px; }
+.result-head { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
+
 /* ---------- empty / error / loading states ---------- */
 .state {
   text-align: center;
