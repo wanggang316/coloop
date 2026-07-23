@@ -982,44 +982,26 @@ function firstLine(s) {
   return nl < 0 ? s : s.slice(0, nl) + ' …';
 }
 
-// TOOL_ARG maps a tool name to its most meaningful one-line argument.
-const TOOL_ARG = {
-  Bash: (i) => i.command,
-  Read: (i) => i.file_path,
-  Edit: (i) => i.file_path,
-  MultiEdit: (i) => i.file_path,
-  Write: (i) => i.file_path,
-  NotebookEdit: (i) => i.notebook_path || i.file_path,
-  Glob: (i) => i.pattern,
-  Grep: (i) => i.pattern + (i.path ? '  ' + i.path : ''),
-  Task: (i) => (i.subagent_type ? '[' + i.subagent_type + '] ' : '') + (i.description || ''),
-  Agent: (i) => (i.subagent_type ? '[' + i.subagent_type + '] ' : '') + (i.description || ''),
-  WebFetch: (i) => i.url,
-  WebSearch: (i) => i.query,
-  Skill: (i) => i.command || i.skill,
-  TaskCreate: (i) => i.description || i.title,
-  TaskUpdate: (i) => i.description || i.title || i.task_id,
-};
-
-function toolSummary(name, input) {
-  input = input || {};
-  const pick = TOOL_ARG[name];
-  let v = pick ? pick(input) : undefined;
-  if (v == null) {
-    for (const k of Object.keys(input)) {
-      if (typeof input[k] === 'string') { v = input[k]; break; }
-    }
-    if (v == null) { try { v = JSON.stringify(input); } catch (_) { v = ''; } }
-  }
-  return firstLine(v);
+// cap truncates a string to n characters with an ellipsis marker.
+function cap(s, n) {
+  s = String(s == null ? '' : s);
+  return s.length > n ? s.slice(0, n) + '…' : s;
 }
 
-// toolInputDetail renders a tool's full input for the expandable row detail:
-// a bare command reads better raw than JSON-escaped; everything else is
-// pretty-printed JSON.
+// toolInputDetail renders a tool_use's FULL input for the expandable row detail
+// — nothing is dropped. A bare command is shown unescaped because it reads far
+// better than JSON-escaped; any remaining fields follow as pretty JSON so the
+// complete input is always visible.
 function toolInputDetail(input) {
-  if (input && typeof input === 'object' && typeof input.command === 'string') {
-    return input.command + (input.description ? '\n\n(' + input.description + ')' : '');
+  if (input == null || typeof input !== 'object') return String(input == null ? '' : input);
+  if (typeof input.command === 'string') {
+    const rest = {};
+    for (const k of Object.keys(input)) { if (k !== 'command') rest[k] = input[k]; }
+    let out = input.command;
+    if (Object.keys(rest).length) {
+      try { out += '\n\n' + JSON.stringify(rest, null, 2); } catch (_) { /* keep command only */ }
+    }
+    return out;
   }
   try { return JSON.stringify(input, null, 2); } catch (_) { return String(input); }
 }
@@ -1059,14 +1041,25 @@ function createTranscript(sink) {
     return parts.length <= 2 ? String(p || '') : '…/' + parts.slice(-2).join('/');
   }
 
-  // callSummary prefers a human-written description, then a path, then the arg.
-  function callSummary(name, input) {
-    input = input || {};
-    if (name === 'Bash') return input.description ? String(input.description) : firstLine(input.command);
-    if (name === 'Read' || name === 'Edit' || name === 'MultiEdit' || name === 'Write' || name === 'NotebookEdit') {
-      return shortenPath(input.file_path || input.notebook_path);
+  // callSummary derives a one-line label for any tool from a generic priority
+  // over common input fields, so unfamiliar tools (Skill, TodoWrite, MCP tools,
+  // …) still read well without per-name special-casing.
+  function callSummary(input) {
+    const inp = input || {};
+    if (inp.query) return firstLine(String(inp.query));
+    if (inp.file_path) return shortenPath(String(inp.file_path));
+    if (inp.notebook_path) return shortenPath(String(inp.notebook_path));
+    if (inp.path) return shortenPath(String(inp.path));
+    if (inp.pattern) return firstLine(String(inp.pattern));
+    if (inp.description) return firstLine(String(inp.description));
+    if (inp.command) return cap(firstLine(String(inp.command)), 120);
+    if (inp.prompt) return cap(firstLine(String(inp.prompt)), 120);
+    if (inp.url) return String(inp.url);
+    if (inp.skill) return String(inp.skill);
+    for (const v of Object.values(inp)) {
+      if (typeof v === 'string' && v.length > 0 && v.length < 120) return v;
     }
-    return toolSummary(name, input);
+    return '';
   }
 
   function asst(o) {
@@ -1079,7 +1072,7 @@ function createTranscript(sink) {
       } else if (b.type === 'tool_use') {
         const name = b.name || 'tool';
         if (b.id) toolNames.set(b.id, name);
-        sink.row({ kind: 'tool', tone: 'solid', color: 'blue', label: name, summary: callSummary(name, b.input), detail: toolInputDetail(b.input) });
+        sink.row({ kind: 'tool', tone: 'solid', color: 'blue', label: name, summary: callSummary(b.input), detail: toolInputDetail(b.input) });
       }
     }
   }
@@ -1088,8 +1081,9 @@ function createTranscript(sink) {
     for (const b of (o.message && o.message.content) || []) {
       if (!b || typeof b !== 'object' || b.type !== 'tool_result') continue;
       const text = toolResultText(b.content);
+      const detail = text.length > 8000 ? text.slice(0, 8000) + '\n… (truncated)' : text;
       const label = (b.tool_use_id && toolNames.get(b.tool_use_id)) || 'Result';
-      sink.row({ kind: 'result', tone: 'muted', color: 'blue', label, summary: firstLine(text) || '(no output)', detail: text || '(no output)', error: !!b.is_error, time: o.timestamp });
+      sink.row({ kind: 'result', tone: 'muted', color: 'blue', label, summary: firstLine(text) || '(no output)', detail: detail || '(no output)', error: !!b.is_error, time: o.timestamp });
     }
   }
 
