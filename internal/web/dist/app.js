@@ -1043,7 +1043,8 @@ function fmtMs(ms) {
 // tool_result row can be labelled with the tool it answers.
 function createTranscript(sink) {
   let toolNames = new Map();
-  function reset() { toolNames = new Map(); }
+  let taskTypes = new Map(); // task_id -> task_type, for notifications
+  function reset() { toolNames = new Map(); taskTypes = new Map(); }
 
   function shortenPath(p) {
     const parts = String(p || '').split('/').filter(Boolean);
@@ -1058,8 +1059,8 @@ function createTranscript(sink) {
     if (inp.query) return firstLine(String(inp.query));
     if (inp.file_path) return shortenPath(String(inp.file_path));
     if (inp.notebook_path) return shortenPath(String(inp.notebook_path));
+    if (inp.pattern) return firstLine(String(inp.pattern)); // Grep/Glob: the pattern says more than the search root
     if (inp.path) return shortenPath(String(inp.path));
-    if (inp.pattern) return firstLine(String(inp.pattern));
     if (inp.description) return firstLine(String(inp.description));
     if (inp.command) return cap(firstLine(String(inp.command)), 120);
     if (inp.prompt) return cap(firstLine(String(inp.prompt)), 120);
@@ -1071,35 +1072,54 @@ function createTranscript(sink) {
     return '';
   }
 
+  // A non-null parent_tool_use_id marks a message emitted by a subagent (the
+  // Agent call that spawned it); renderers use it to nest rather than to
+  // interleave subagent chatter with the main transcript.
   function asst(o) {
+    const parent = o.parent_tool_use_id || null;
     for (const b of (o.message && o.message.content) || []) {
       if (!b || typeof b !== 'object') continue;
       if (b.type === 'text') {
-        if ((b.text || '').trim()) sink.row({ kind: 'agent', tone: 'solid', color: 'green', label: 'Agent', summary: firstLine(b.text), detail: b.text });
+        if ((b.text || '').trim()) sink.row({ kind: 'agent', tone: 'solid', color: 'green', label: parent ? 'Subagent' : 'Agent', summary: firstLine(b.text), detail: b.text, parent });
       } else if (b.type === 'thinking') {
-        if ((b.thinking || '').trim()) sink.row({ kind: 'thinking', tone: 'muted', color: 'gray', label: 'Thinking', summary: firstLine(b.thinking), detail: b.thinking });
+        if ((b.thinking || '').trim()) sink.row({ kind: 'thinking', tone: 'muted', color: 'gray', label: 'Thinking', summary: firstLine(b.thinking), detail: b.thinking, parent });
       } else if (b.type === 'tool_use') {
         const name = b.name || 'tool';
         if (b.id) toolNames.set(b.id, name);
-        sink.row({ kind: 'tool', tone: 'solid', color: 'blue', label: name, summary: callSummary(b.input), detail: toolInputDetail(b.input), toolUseId: b.id });
+        sink.row({ kind: 'tool', tone: 'solid', color: 'blue', label: name, summary: callSummary(b.input), detail: toolInputDetail(b.input), toolUseId: b.id, parent });
       }
     }
   }
 
   function usr(o) {
+    const parent = o.parent_tool_use_id || null;
     for (const b of (o.message && o.message.content) || []) {
       if (!b || typeof b !== 'object' || b.type !== 'tool_result') continue;
       const text = toolResultText(b.content);
       const detail = text.length > 8000 ? text.slice(0, 8000) + '\n… (truncated)' : text;
       const label = (b.tool_use_id && toolNames.get(b.tool_use_id)) || 'Result';
-      sink.row({ kind: 'result', tone: 'muted', color: 'blue', label, summary: firstLine(text) || '(no output)', detail: detail || '(no output)', error: !!b.is_error, time: o.timestamp, toolUseId: b.tool_use_id });
+      sink.row({ kind: 'result', tone: 'muted', color: 'blue', label, summary: firstLine(text) || '(no output)', detail: detail || '(no output)', error: !!b.is_error, time: o.timestamp, toolUseId: b.tool_use_id, parent });
     }
   }
 
   function sys(o) {
     if (o.subtype === 'init') { sink.stat({ model: o.model, cwd: o.cwd, permissionMode: o.permissionMode }); return; }
-    if (o.subtype === 'task_started') { sink.row({ kind: 'task', tone: 'solid', color: 'green', label: 'Task', summary: o.description || o.task_id || '', detail: o.description }); return; }
-    if (o.subtype === 'task_notification') { sink.row({ kind: 'task', tone: 'muted', color: 'green', label: 'Task', summary: (o.status ? o.status + ': ' : '') + (o.summary || ''), detail: o.summary }); return; }
+    // Background-task lifecycle. Both carry the tool_use_id of the call that
+    // went to the background (a Bash with run_in_background, or an Agent), so
+    // a renderer can pin the status onto that call instead of a separate row.
+    // Only task_started carries task_type; the notification inherits it by task_id.
+    if (o.subtype === 'task_started') {
+      if (o.task_id) taskTypes.set(o.task_id, o.task_type);
+      sink.row({ kind: 'task', tone: 'solid', color: 'green', label: 'Task', summary: o.description || o.task_id || '', detail: o.description, toolUseId: o.tool_use_id, taskType: o.task_type });
+      return;
+    }
+    if (o.subtype === 'task_notification') {
+      const taskType = o.task_type || taskTypes.get(o.task_id);
+      sink.row({ kind: 'task', tone: 'muted', color: 'green', label: 'Task', summary: (o.status ? o.status + ': ' : '') + (o.summary || ''), detail: o.summary, toolUseId: o.tool_use_id, taskType, status: o.status, error: o.status === 'failed' });
+      return;
+    }
+    if (o.subtype === 'api_retry') { sink.row({ kind: 'note', tone: 'muted', color: 'gray', label: 'Retry', summary: 'API retry ' + (o.attempt || '?') + '/' + (o.max_retries || '?') + (o.error ? ' · ' + o.error : '') + (o.error_status ? ' (' + o.error_status + ')' : '') }); return; }
+    if (o.subtype === 'compact_boundary') { sink.row({ kind: 'note', tone: 'muted', color: 'gray', label: 'Compact', summary: 'Context compacted' + (o.compact_metadata && o.compact_metadata.trigger ? ' (' + o.compact_metadata.trigger + ')' : '') }); return; }
     // hook_started / hook_response / thinking_tokens / … → noise, skip.
   }
 
@@ -1421,13 +1441,15 @@ function renderLog(root, name, id) {
     return g.node;
   }
 
-  function prettyThinking(desc) {
+  // prettyEntry adds a collapsible non-tool entry (thinking, subagent text) to
+  // the open group without affecting its activity phrase.
+  function prettyEntry(label, badgeCls, summary, body) {
     const g = ensureGroup();
-    const detail = el('div', { class: 'pcall-detail', hidden: true }, el('pre', { class: 'evdetail' }, desc.detail));
+    const detail = el('div', { class: 'pcall-detail', hidden: true }, body);
     const head = el('div', { class: 'pcall-head' },
       el('span', { class: 'pg-chev' }, icon('chevron-right')),
-      el('span', { class: 'evbadge muted gray' }, 'Thinking'),
-      el('span', { class: 'pcall-summary muted' }, desc.summary || ''));
+      el('span', { class: 'evbadge ' + badgeCls }, label),
+      el('span', { class: 'pcall-summary muted' }, summary || ''));
     const node = el('div', { class: 'pcall' }, head, detail);
     head.addEventListener('click', () => {
       detail.hidden = !detail.hidden;
@@ -1437,23 +1459,56 @@ function renderLog(root, name, id) {
     return g.node;
   }
 
+  function prettyThinking(desc) {
+    return prettyEntry('Thinking', 'muted gray', desc.summary, el('pre', { class: 'evdetail' }, desc.detail));
+  }
+
+  // prettyTask handles background-task lifecycle. A task that belongs to a
+  // call already shown in a group (a backgrounded Bash) becomes a status tag on
+  // that call — "background" → "completed" / "failed" — rather than a separate
+  // line. Subagent tasks, and tasks whose call was never seen, are milestones
+  // worth a standalone line.
+  function prettyTask(desc) {
+    const started = desc.tone === 'solid';
+    const call = desc.toolUseId && callsById.get(desc.toolUseId);
+    if (call && desc.taskType === 'local_bash') {
+      let tag = call.head.querySelector('.ptag');
+      if (!tag) { tag = el('span', { class: 'ptag' }); call.head.append(tag); }
+      tag.textContent = started ? 'background' : (desc.status || 'done');
+      tag.classList.toggle('ok', !started && !desc.error);
+      tag.classList.toggle('err', !!desc.error);
+      if (desc.error) call.head.classList.add('err');
+      return call.head.closest('.pgroup');
+    }
+    closeGroup();
+    const agent = desc.taskType && desc.taskType !== 'local_bash';
+    const noun = agent ? 'Agent' : 'Task';
+    const text = started
+      ? noun + ' started · ' + (desc.summary || '')
+      : noun + ' ' + (desc.status || 'updated') + (desc.detail ? ' · ' + desc.detail : '');
+    const node = el('div', { class: 'pline' + (desc.error ? ' err' : '') },
+      el('span', { class: 'pg-icon' }, icon('sparkles')),
+      el('span', { class: 'pline-text' }, text));
+    place(node);
+    return node;
+  }
+
   function prettyRow(desc) {
     switch (desc.kind) {
       case 'tool': { const g = ensureGroup(); prettyCall(g, desc); return g.node; }
       case 'result': return prettyResult(desc);
       case 'thinking': return prettyThinking(desc);
       case 'agent': {
+        if (desc.parent) return prettyEntry('Subagent', 'muted green', desc.summary, el('div', { class: 'pmsg sub' }, renderMarkdown(desc.detail)));
         closeGroup();
         const node = el('div', { class: 'pmsg' }, renderMarkdown(desc.detail));
         place(node);
         return node;
       }
-      case 'task': {
+      case 'task': return prettyTask(desc);
+      case 'note': {
         closeGroup();
-        const started = desc.tone === 'solid';
-        const node = el('div', { class: 'pline' },
-          el('span', { class: 'pg-icon' }, icon('sparkles')),
-          el('span', { class: 'pline-text' }, (started ? 'Task started · ' : 'Task update · ') + (desc.summary || '')));
+        const node = el('div', { class: 'pnote' }, desc.summary || desc.label);
         place(node);
         return node;
       }
@@ -1479,7 +1534,7 @@ function renderLog(root, name, id) {
       el('span', { class: 'evbadge ' + desc.tone + ' ' + desc.color + (desc.error ? ' err' : '') }, desc.label),
       el('span', { class: 'evsummary' }, summary),
       el('span', { class: 'evmeta' }, '#' + idx + (desc.time ? '  ' + fmtClock(desc.time) : '')));
-    const row = el('div', { class: 'evrow', dataset: { kind: desc.kind } }, rowHead, detail);
+    const row = el('div', { class: 'evrow' + (desc.parent ? ' sub' : ''), dataset: { kind: desc.kind } }, rowHead, detail);
     if (hasDetail) {
       if (allExpanded) row.classList.add('open');
       rowHead.addEventListener('click', () => {

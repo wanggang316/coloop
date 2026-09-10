@@ -384,6 +384,8 @@ label.toggle input { accent-color: var(--primary); }
 /* event table: one badge row per event, expandable to a detail pre */
 .logbox .evrow { border-bottom: 1px solid var(--border); }
 .logbox .evrow:last-child { border-bottom: none; }
+/* rows emitted by a subagent (parent_tool_use_id set) sit one step in */
+.logbox .evrow.sub > .evrow-head { padding-left: 28px; }
 .evrow-head { display: flex; align-items: center; gap: 10px; padding: 7px 6px; }
 .evrow-head:not(.leaf) { cursor: pointer; }
 .evrow-head:not(.leaf):hover { background: var(--hover); }
@@ -435,8 +437,8 @@ label.toggle input { accent-color: var(--primary); }
 }
 .logbox.pretty > * + * { margin-top: 14px; }
 
-.pmsg { max-width: 76ch; }
 .pmsg > * + * { margin-top: 10px; }
+.pmsg.sub { padding: 6px 10px; margin-bottom: 6px; border-left: 2px solid var(--border-strong); }
 .md-p { margin: 0; white-space: pre-wrap; word-break: break-word; }
 .md-h { margin: 0; font-weight: 600; }
 .md-h1 { font-size: 17px; } .md-h2 { font-size: 16px; } .md-h3, .md-h4, .md-h5, .md-h6 { font-size: 14px; }
@@ -466,7 +468,7 @@ label.toggle input { accent-color: var(--primary); }
 .pg-head:hover { background: var(--hover); color: var(--foreground); }
 .pg-icon { display: inline-flex; flex: 0 0 auto; color: var(--faint-foreground); }
 .pg-icon .icon { width: 16px; height: 16px; }
-.pg-phrase { flex: 1 1 auto; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.pg-phrase { flex: 0 1 auto; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .pg-chev { display: inline-flex; flex: 0 0 auto; color: var(--faint-foreground); transition: transform .15s ease; }
 .pg-chev .icon { width: 14px; height: 14px; }
 .pgroup.open > .pg-head .pg-chev, .pcall.open > .pcall-head .pg-chev { transform: rotate(90deg); }
@@ -486,9 +488,18 @@ label.toggle input { accent-color: var(--primary); }
 .pcall-detail .evdetail { margin: 0 0 6px 0; }
 .pcall-label { font-size: 11px; color: var(--faint-foreground); text-transform: uppercase; letter-spacing: .4px; margin: 4px 0 3px; }
 
-/* a standalone one-liner (background task lifecycle) */
+/* status tag on a call that ran in the background */
+.ptag {
+  flex: 0 0 auto; font-size: 11px; color: var(--muted-foreground); background: var(--elevated);
+  border: 1px solid var(--border); border-radius: var(--radius-full); padding: 0 7px; white-space: nowrap;
+}
+.ptag.ok { color: var(--success); border-color: color-mix(in oklch, var(--success) 35%, transparent); }
+.ptag.err { color: var(--destructive); border-color: color-mix(in oklch, var(--destructive) 35%, transparent); }
+
+/* a standalone one-liner (subagent lifecycle) */
 .pline { display: flex; align-items: center; gap: 8px; color: var(--muted-foreground); font-size: 14px; }
 .pline-text { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.pline.err { color: var(--destructive); }
 
 /* transient status / non-event lines */
 .pnote { color: var(--faint-foreground); font-style: italic; font-size: 12px; }
