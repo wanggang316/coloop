@@ -52,6 +52,15 @@ const ICONS = {
   pencil: '<path d="M12 20h9"/><path d="M16.5 3.5a2.121 2.121 0 0 1 3 3L7 19l-4 1 1-4Z"/>',
   trash: '<path d="M3 6h18"/><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/><line x1="10" x2="10" y1="11" y2="17"/><line x1="14" x2="14" y1="11" y2="17"/>',
   plus: '<path d="M5 12h14"/><path d="M12 5v14"/>',
+  // pretty-view activity icons
+  'book-open': '<path d="M12 7v14"/><path d="M3 18a1 1 0 0 1-1-1V4a1 1 0 0 1 1-1h5a4 4 0 0 1 4 4 4 4 0 0 1 4-4h5a1 1 0 0 1 1 1v13a1 1 0 0 1-1 1h-6a3 3 0 0 0-3 3 3 3 0 0 0-3-3z"/>',
+  search: '<circle cx="11" cy="11" r="8"/><path d="m21 21-4.3-4.3"/>',
+  terminal: '<polyline points="4 17 10 11 4 5"/><line x1="12" x2="20" y1="19" y2="19"/>',
+  globe: '<circle cx="12" cy="12" r="10"/><path d="M12 2a14.5 14.5 0 0 0 0 20 14.5 14.5 0 0 0 0-20"/><path d="M2 12h20"/>',
+  sparkles: '<path d="M9.937 15.5A2 2 0 0 0 8.5 14.063l-6.135-1.582a.5.5 0 0 1 0-.962L8.5 9.936A2 2 0 0 0 9.937 8.5l1.582-6.135a.5.5 0 0 1 .963 0L14.063 8.5A2 2 0 0 0 15.5 9.937l6.135 1.581a.5.5 0 0 1 0 .964L15.5 14.063a2 2 0 0 0-1.437 1.437l-1.582 6.135a.5.5 0 0 1-.963 0z"/><path d="M20 3v4"/><path d="M22 5h-4"/>',
+  wrench: '<path d="M14.7 6.3a1 1 0 0 0 0 1.4l1.6 1.6a1 1 0 0 0 1.4 0l3.77-3.77a6 6 0 0 1-7.94 7.94l-6.91 6.91a2.12 2.12 0 0 1-3-3l6.91-6.91a6 6 0 0 1 7.94-7.94l-3.76 3.76z"/>',
+  lightbulb: '<path d="M15 14c.2-1 .7-1.7 1.5-2.5 1-.9 1.5-2.2 1.5-3.5A6 6 0 0 0 6 8c0 1 .2 2.2 1.5 3.5.7.7 1.3 1.5 1.5 2.5"/><path d="M9 18h6"/><path d="M10 22h4"/>',
+  'chevron-right': '<path d="m9 18 6-6-6-6"/>',
 };
 
 // icon builds a 24x24 stroke SVG that inherits the current text color and size.
@@ -1072,7 +1081,7 @@ function createTranscript(sink) {
       } else if (b.type === 'tool_use') {
         const name = b.name || 'tool';
         if (b.id) toolNames.set(b.id, name);
-        sink.row({ kind: 'tool', tone: 'solid', color: 'blue', label: name, summary: callSummary(b.input), detail: toolInputDetail(b.input) });
+        sink.row({ kind: 'tool', tone: 'solid', color: 'blue', label: name, summary: callSummary(b.input), detail: toolInputDetail(b.input), toolUseId: b.id });
       }
     }
   }
@@ -1083,7 +1092,7 @@ function createTranscript(sink) {
       const text = toolResultText(b.content);
       const detail = text.length > 8000 ? text.slice(0, 8000) + '\n… (truncated)' : text;
       const label = (b.tool_use_id && toolNames.get(b.tool_use_id)) || 'Result';
-      sink.row({ kind: 'result', tone: 'muted', color: 'blue', label, summary: firstLine(text) || '(no output)', detail: detail || '(no output)', error: !!b.is_error, time: o.timestamp });
+      sink.row({ kind: 'result', tone: 'muted', color: 'blue', label, summary: firstLine(text) || '(no output)', detail: detail || '(no output)', error: !!b.is_error, time: o.timestamp, toolUseId: b.tool_use_id });
     }
   }
 
@@ -1112,6 +1121,120 @@ function createTranscript(sink) {
   return { render, reset };
 }
 
+// ---------- pretty view helpers: Markdown subset + tool-activity phrasing ----------
+
+// mdInline renders the inline subset — `code` and **bold** — as DOM nodes.
+// Everything else stays literal text, so nothing in a log line can inject markup.
+function mdInline(s) {
+  const out = [];
+  const re = /(`[^`\n]+`|\*\*[^*\n]+\*\*)/g;
+  let last = 0, m;
+  while ((m = re.exec(s)) !== null) {
+    if (m.index > last) out.push(s.slice(last, m.index));
+    const tok = m[0];
+    if (tok[0] === '`') out.push(el('code', { class: 'md-code-inline' }, tok.slice(1, -1)));
+    else out.push(el('strong', null, mdInline(tok.slice(2, -2)))); // bold may wrap `code`
+    last = m.index + tok.length;
+  }
+  if (last < s.length) out.push(s.slice(last));
+  return out;
+}
+
+const MD_LIST_RE = /^\s*([-*+]|\d+[.)])\s+/;
+const MD_HEAD_RE = /^\s{0,3}(#{1,6})\s+(.*)$/;
+const MD_FENCE_RE = /^\s*```/;
+const MD_TABLE_RE = /^\s*\|/;
+const MD_QUOTE_RE = /^\s{0,3}>\s?/;
+
+// renderMarkdown converts a small Markdown subset (fenced code, headings,
+// bullet / numbered lists, pipe tables, paragraphs, inline code and bold) into
+// a DocumentFragment. Paragraph line breaks are preserved because agents tend
+// to write deliberately line-broken prose. Built with el(), never innerHTML.
+function renderMarkdown(src) {
+  const frag = document.createDocumentFragment();
+  const lines = String(src == null ? '' : src).replace(/\r\n?/g, '\n').split('\n');
+  const isSpecial = (ln) => MD_FENCE_RE.test(ln) || MD_HEAD_RE.test(ln) || MD_LIST_RE.test(ln) || MD_TABLE_RE.test(ln) || MD_QUOTE_RE.test(ln);
+  let i = 0;
+  while (i < lines.length) {
+    const ln = lines[i];
+    if (!ln.trim()) { i += 1; continue; }
+    if (MD_FENCE_RE.test(ln)) {
+      const buf = [];
+      i += 1;
+      while (i < lines.length && !MD_FENCE_RE.test(lines[i])) { buf.push(lines[i]); i += 1; }
+      i += 1; // closing fence (or EOF)
+      frag.append(el('pre', { class: 'md-code' }, buf.join('\n')));
+      continue;
+    }
+    const h = ln.match(MD_HEAD_RE);
+    if (h) { frag.append(el('div', { class: 'md-h md-h' + h[1].length }, mdInline(h[2]))); i += 1; continue; }
+    if (MD_LIST_RE.test(ln)) {
+      const list = el(/^\s*\d/.test(ln) ? 'ol' : 'ul', { class: 'md-list' });
+      while (i < lines.length && MD_LIST_RE.test(lines[i])) {
+        list.append(el('li', null, mdInline(lines[i].replace(MD_LIST_RE, ''))));
+        i += 1;
+      }
+      frag.append(list);
+      continue;
+    }
+    if (MD_TABLE_RE.test(ln)) {
+      const buf = [];
+      while (i < lines.length && MD_TABLE_RE.test(lines[i])) { buf.push(lines[i]); i += 1; }
+      frag.append(el('pre', { class: 'md-table' }, buf.join('\n')));
+      continue;
+    }
+    if (MD_QUOTE_RE.test(ln)) {
+      const buf = [];
+      while (i < lines.length && MD_QUOTE_RE.test(lines[i])) { buf.push(lines[i].replace(MD_QUOTE_RE, '')); i += 1; }
+      frag.append(el('blockquote', { class: 'md-quote' }, mdInline(buf.join('\n'))));
+      continue;
+    }
+    const buf = [];
+    while (i < lines.length && lines[i].trim() && !isSpecial(lines[i])) { buf.push(lines[i]); i += 1; }
+    frag.append(el('p', { class: 'md-p' }, mdInline(buf.join('\n'))));
+  }
+  return frag;
+}
+
+// Tool names collapse into activity categories so a burst of calls reads as
+// one line — "Read files, ran 3 commands, edited a file" — the way a chat UI
+// summarises an agent's work between two messages.
+const TOOL_CATEGORY = {
+  Read: 'read', NotebookRead: 'read',
+  Glob: 'search', Grep: 'search', LS: 'search',
+  Bash: 'shell', BashOutput: 'shell', KillShell: 'shell',
+  Edit: 'edit', Write: 'edit', MultiEdit: 'edit', NotebookEdit: 'edit',
+  WebFetch: 'web', WebSearch: 'web',
+  Agent: 'agent', Task: 'agent',
+};
+const CATEGORY_META = {
+  read:   { icon: 'book-open', one: 'read a file',       many: 'read files' },
+  search: { icon: 'search',    one: 'searched files',    many: 'searched files' },
+  shell:  { icon: 'terminal',  one: 'ran a command',     many: 'ran {n} commands' },
+  edit:   { icon: 'pencil',    one: 'edited a file',     many: 'edited files' },
+  web:    { icon: 'globe',     one: 'searched the web',  many: 'searched the web' },
+  agent:  { icon: 'sparkles',  one: 'launched an agent', many: 'launched {n} agents' },
+};
+
+// toolCategory maps a tool name to a category key; unknown tools (Skill,
+// TodoWrite, mcp__server__tool, …) get their own key so they are still named.
+function toolCategory(name) {
+  return TOOL_CATEGORY[name] || ('tool:' + String(name || 'tool').replace(/^mcp__.*__/, ''));
+}
+
+// activityPhrase turns an ordered {category -> count} map into one sentence.
+function activityPhrase(counts) {
+  const parts = [];
+  for (const [cat, n] of counts) {
+    const meta = CATEGORY_META[cat];
+    if (meta) parts.push((n === 1 ? meta.one : meta.many).replace('{n}', n));
+    else parts.push('used ' + cat.slice(5) + (n > 1 ? ' ×' + n : ''));
+  }
+  if (!parts.length) return 'Thought for a moment';
+  const s = parts.join(', ');
+  return s[0].toUpperCase() + s.slice(1);
+}
+
 // ========================================================================
 // VIEW 3 — live log view
 // ========================================================================
@@ -1128,18 +1251,20 @@ function renderLog(root, name, id) {
   let retries = 0;
   let retryTimer = null;
 
-  // View mode: 'formatted' renders Claude Code stream-json as a transcript;
-  // 'raw' shows every line verbatim. Auto-picked from the first content line,
-  // overridable by the segmented toggle. `entries` is the ordered source of
-  // truth so switching modes replays the whole run cleanly.
+  // View mode: 'pretty' renders Claude Code stream-json as a chat-style
+  // transcript (prose + collapsed tool activity); 'formatted' as a dense event
+  // table; 'raw' shows every line verbatim. Auto-picked from the first content
+  // line, overridable by the segmented toggle. `entries` is the ordered source
+  // of truth so switching modes replays the whole run cleanly.
   let mode = null;
   let userPinnedMode = false;
   const entries = []; // { kind:'content'|'meta', text, sys? }
 
   const autoScrollBox = el('input', { type: 'checkbox', checked: true });
+  const prettyBtn = el('button', { type: 'button', class: 'seg-btn', onclick: () => setMode('pretty', true) }, 'Pretty');
   const fmtBtn = el('button', { type: 'button', class: 'seg-btn', onclick: () => setMode('formatted', true) }, 'Formatted');
   const rawBtn = el('button', { type: 'button', class: 'seg-btn', onclick: () => setMode('raw', true) }, 'Raw');
-  const seg = el('div', { class: 'seg' }, fmtBtn, rawBtn);
+  const seg = el('div', { class: 'seg' }, prettyBtn, fmtBtn, rawBtn);
   const expandBtn = el('button', { type: 'button', class: 'btn sm', onclick: () => toggleExpandAll() }, 'expand all');
   const copyBtn = el('button', { type: 'button', class: 'btn sm', onclick: () => copyAll() }, 'copy');
 
@@ -1209,11 +1334,140 @@ function renderLog(root, name, id) {
     for (const c of chips) chipsEl.append(el('span', { class: 'chip' }, c));
   }
 
-  // sinkRow renders one decomposed event as a badge row plus a minimap tick.
+  // sinkRow accounts one decomposed event (stats + minimap tick) and hands it
+  // to the renderer for the current mode. The tick scrolls to whatever node
+  // the renderer returned — a table row, or the chat group the event joined.
   function sinkRow(desc) {
     rowIdx += 1;
     if (desc.kind === 'tool') stats.toolCalls += 1;
     const idx = rowIdx;
+    const node = mode === 'pretty' ? prettyRow(desc) : tableRow(desc, idx);
+    const tick = el('i', { class: 'tick ' + desc.color + ' ' + desc.tone, title: '#' + idx + ' ' + desc.label });
+    if (node) tick.addEventListener('click', () => node.scrollIntoView({ block: 'center' }));
+    minimapEl.append(tick);
+    renderHeader();
+  }
+
+  // ---- pretty chat view: prose messages + collapsed tool-activity groups ----
+  //
+  // Consecutive tool calls (and their results) fold into one group line such
+  // as "Read files, ran a command"; the group expands to per-call input/output.
+  // An agent message or task event closes the open group. Results are matched
+  // to their call by tool_use_id, so they land inside the right group even
+  // when they arrive after it was closed.
+  let curGroup = null;            // { node, body, phrase, iconSlot, counts:Map }
+  const callsById = new Map();    // tool_use_id -> { detail, out }
+
+  function closeGroup() { curGroup = null; }
+
+  function ensureGroup() {
+    if (curGroup) return curGroup;
+    const iconSlot = el('span', { class: 'pg-icon' }, icon('wrench'));
+    const phrase = el('span', { class: 'pg-phrase' }, activityPhrase(new Map()));
+    const body = el('div', { class: 'pg-body', hidden: !allExpanded });
+    const head = el('div', { class: 'pg-head' }, iconSlot, phrase, el('span', { class: 'pg-chev' }, icon('chevron-right')));
+    const node = el('div', { class: 'pgroup' + (allExpanded ? ' open' : '') }, head, body);
+    head.addEventListener('click', () => {
+      body.hidden = !body.hidden;
+      node.classList.toggle('open', !body.hidden);
+    });
+    curGroup = { node, body, phrase, iconSlot, counts: new Map() };
+    place(node);
+    return curGroup;
+  }
+
+  // countCall updates the group's phrase and icon after a tool call joins it.
+  function countCall(g, name) {
+    const cat = toolCategory(name);
+    g.counts.set(cat, (g.counts.get(cat) || 0) + 1);
+    g.phrase.textContent = activityPhrase(g.counts);
+    const first = g.counts.keys().next().value;
+    const meta = CATEGORY_META[first];
+    g.iconSlot.replaceChildren(icon(meta ? meta.icon : 'wrench'));
+  }
+
+  // prettyCall renders one tool call inside a group: a one-line head that
+  // expands to the full input, with the output pre appended when it arrives.
+  function prettyCall(g, desc) {
+    const detail = el('div', { class: 'pcall-detail', hidden: true });
+    if (desc.detail) detail.append(el('div', { class: 'pcall-label' }, 'input'), el('pre', { class: 'evdetail' }, desc.detail));
+    const head = el('div', { class: 'pcall-head' },
+      el('span', { class: 'pg-chev' }, icon('chevron-right')),
+      el('span', { class: 'evbadge solid blue' }, desc.label),
+      el('span', { class: 'pcall-summary' }, desc.summary || ''));
+    const node = el('div', { class: 'pcall' }, head, detail);
+    head.addEventListener('click', () => {
+      detail.hidden = !detail.hidden;
+      node.classList.toggle('open', !detail.hidden);
+    });
+    g.body.append(node);
+    if (desc.toolUseId) callsById.set(desc.toolUseId, { detail, head });
+    countCall(g, desc.label);
+  }
+
+  function prettyResult(desc) {
+    const call = desc.toolUseId && callsById.get(desc.toolUseId);
+    if (call) {
+      call.detail.append(el('div', { class: 'pcall-label' }, desc.error ? 'error' : 'output'),
+        el('pre', { class: 'evdetail' + (desc.error ? ' error' : '') }, desc.detail));
+      if (desc.error) call.head.classList.add('err');
+      return call.head.closest('.pgroup');
+    }
+    // Orphan result (no matching call seen): show it as its own entry.
+    const g = ensureGroup();
+    g.body.append(el('div', { class: 'pcall' },
+      el('div', { class: 'pcall-head leaf' }, el('span', { class: 'evbadge muted blue' + (desc.error ? ' err' : '') }, desc.label), el('span', { class: 'pcall-summary' }, desc.summary || '')),
+      el('div', { class: 'pcall-detail' }, el('pre', { class: 'evdetail' + (desc.error ? ' error' : '') }, desc.detail))));
+    return g.node;
+  }
+
+  function prettyThinking(desc) {
+    const g = ensureGroup();
+    const detail = el('div', { class: 'pcall-detail', hidden: true }, el('pre', { class: 'evdetail' }, desc.detail));
+    const head = el('div', { class: 'pcall-head' },
+      el('span', { class: 'pg-chev' }, icon('chevron-right')),
+      el('span', { class: 'evbadge muted gray' }, 'Thinking'),
+      el('span', { class: 'pcall-summary muted' }, desc.summary || ''));
+    const node = el('div', { class: 'pcall' }, head, detail);
+    head.addEventListener('click', () => {
+      detail.hidden = !detail.hidden;
+      node.classList.toggle('open', !detail.hidden);
+    });
+    g.body.append(node);
+    return g.node;
+  }
+
+  function prettyRow(desc) {
+    switch (desc.kind) {
+      case 'tool': { const g = ensureGroup(); prettyCall(g, desc); return g.node; }
+      case 'result': return prettyResult(desc);
+      case 'thinking': return prettyThinking(desc);
+      case 'agent': {
+        closeGroup();
+        const node = el('div', { class: 'pmsg' }, renderMarkdown(desc.detail));
+        place(node);
+        return node;
+      }
+      case 'task': {
+        closeGroup();
+        const started = desc.tone === 'solid';
+        const node = el('div', { class: 'pline' },
+          el('span', { class: 'pg-icon' }, icon('sparkles')),
+          el('span', { class: 'pline-text' }, (started ? 'Task started · ' : 'Task update · ') + (desc.summary || '')));
+        place(node);
+        return node;
+      }
+      default: {
+        closeGroup();
+        const node = el('div', { class: 'pnote mono' }, desc.summary || desc.label);
+        place(node);
+        return node;
+      }
+    }
+  }
+
+  // ---- formatted event table: one badge row per event ----
+  function tableRow(desc, idx) {
     const summary = desc.summary || '';
     const detailText = desc.detail != null ? String(desc.detail) : '';
     const hasDetail = !!detailText && (detailText !== summary || detailText.indexOf('\n') >= 0);
@@ -1234,10 +1488,7 @@ function renderLog(root, name, id) {
       });
     }
     place(row);
-    const tick = el('i', { class: 'tick ' + desc.color + ' ' + desc.tone, title: '#' + idx + ' ' + desc.label });
-    tick.addEventListener('click', () => row.scrollIntoView({ block: 'center' }));
-    minimapEl.append(tick);
-    renderHeader();
+    return row;
   }
 
   function sinkStat(patch) { Object.assign(stats, patch); renderHeader(); }
@@ -1246,8 +1497,15 @@ function renderLog(root, name, id) {
 
   function toggleExpandAll() {
     allExpanded = !allExpanded;
-    for (const d of box.querySelectorAll('.evdetail')) d.hidden = !allExpanded;
-    for (const r of box.querySelectorAll('.evrow')) r.classList.toggle('open', allExpanded && !!r.querySelector('.evdetail'));
+    if (mode === 'pretty') {
+      for (const b of box.querySelectorAll('.pg-body')) b.hidden = !allExpanded;
+      for (const g of box.querySelectorAll('.pgroup')) g.classList.toggle('open', allExpanded);
+      for (const d of box.querySelectorAll('.pcall-detail')) d.hidden = !allExpanded;
+      for (const c of box.querySelectorAll('.pcall')) c.classList.toggle('open', allExpanded);
+    } else {
+      for (const d of box.querySelectorAll('.evdetail')) d.hidden = !allExpanded;
+      for (const r of box.querySelectorAll('.evrow')) r.classList.toggle('open', allExpanded && !!r.querySelector('.evdetail'));
+    }
     expandBtn.textContent = allExpanded ? 'collapse all' : 'expand all';
   }
 
@@ -1259,16 +1517,21 @@ function renderLog(root, name, id) {
 
   // applyModeChrome syncs the toggle, run-summary visibility and toolbar to mode.
   function applyModeChrome() {
+    prettyBtn.classList.toggle('active', mode === 'pretty');
     fmtBtn.classList.toggle('active', mode === 'formatted');
     rawBtn.classList.toggle('active', mode === 'raw');
-    const fmt = mode === 'formatted';
-    runSummary.hidden = !fmt;
-    expandBtn.hidden = !fmt;
-    if (fmt) renderHeader();
+    const structured = mode === 'pretty' || mode === 'formatted';
+    box.classList.toggle('pretty', mode === 'pretty');
+    runSummary.hidden = !structured;
+    expandBtn.hidden = !structured;
+    if (structured) renderHeader();
   }
 
   function renderMeta(text) {
-    if (mode === 'formatted') {
+    if (mode === 'pretty') {
+      closeGroup();
+      place(el('div', { class: 'pnote' }, text || ' '));
+    } else if (mode === 'formatted') {
       place(el('div', { class: 'evrow meta' }, el('span', { class: 'evmeta-note' }, text || ' ')));
     } else {
       place(el('div', { class: 'log-meta sys' }, text === '' ? ' ' : text));
@@ -1276,6 +1539,13 @@ function renderLog(root, name, id) {
   }
 
   function renderContentNode(text) {
+    if (mode === 'pretty') {
+      const o = tryParseJSON(text);
+      if (isClaudeEvent(o)) { transcript.render(o); return; }
+      closeGroup();
+      place(el('div', { class: 'pnote mono' }, text === '' ? ' ' : text));
+      return;
+    }
     if (mode === 'formatted') {
       const o = tryParseJSON(text);
       if (isClaudeEvent(o)) { transcript.render(o); return; }
@@ -1289,6 +1559,8 @@ function renderLog(root, name, id) {
     rowIdx = 0;
     Object.assign(stats, STAT0);
     stats.toolCalls = 0;
+    curGroup = null;
+    callsById.clear();
   }
 
   function rebuild() {
@@ -1317,12 +1589,12 @@ function renderLog(root, name, id) {
     entries.push({ kind: 'content', text });
     gotData = true;
     if (mode === null) {
-      mode = isClaudeEvent(tryParseJSON(text)) ? 'formatted' : 'raw';
+      mode = isClaudeEvent(tryParseJSON(text)) ? 'pretty' : 'raw';
       applyModeChrome();
     } else if (mode === 'raw' && !userPinnedMode && entries.length <= 10 && isClaudeEvent(tryParseJSON(text))) {
       // An early non-JSON banner mis-detected the run as raw; the first real
-      // event upgrades it to formatted (replaying what we have).
-      setMode('formatted', false);
+      // event upgrades it to pretty (replaying what we have).
+      setMode('pretty', false);
       return;
     }
     renderContentNode(text);

@@ -425,6 +425,75 @@ label.toggle input { accent-color: var(--primary); }
 .evdetail[hidden] { display: none; }
 .evdetail.error { color: var(--destructive); border-color: color-mix(in oklch, var(--destructive) 35%, transparent); }
 
+/* ---------- pretty transcript: chat-style prose + collapsed tool activity ---------- */
+/* The box switches to proportional type on a plain background; tool work is
+   folded into one muted line per burst that opens to the underlying calls. */
+.logbox.pretty {
+  font-family: var(--font-sans); font-size: 14px; line-height: 1.65;
+  color: var(--foreground); background: var(--card); white-space: normal;
+  padding: 16px 20px;
+}
+.logbox.pretty > * + * { margin-top: 14px; }
+
+.pmsg { max-width: 76ch; }
+.pmsg > * + * { margin-top: 10px; }
+.md-p { margin: 0; white-space: pre-wrap; word-break: break-word; }
+.md-h { margin: 0; font-weight: 600; }
+.md-h1 { font-size: 17px; } .md-h2 { font-size: 16px; } .md-h3, .md-h4, .md-h5, .md-h6 { font-size: 14px; }
+.md-quote {
+  margin: 0; padding: 2px 12px; white-space: pre-wrap; word-break: break-word;
+  color: var(--muted-foreground); border-left: 3px solid var(--border-strong);
+}
+.md-list { margin: 0; padding-left: 22px; }
+.md-list li + li { margin-top: 3px; }
+.md-code-inline {
+  font-family: var(--font-mono); font-size: 12px; padding: 1px 5px; border-radius: 4px;
+  background: var(--elevated); border: 1px solid var(--border);
+}
+.md-code, .md-table {
+  margin: 0; font-family: var(--font-mono); font-size: 12px; line-height: 1.5;
+  color: var(--code-fg); background: var(--code-bg); border: 1px solid var(--border);
+  border-radius: var(--radius-sm); padding: 8px 10px; white-space: pre; overflow: auto;
+}
+
+/* a folded burst of tool calls */
+.pgroup { border-radius: var(--radius-md); }
+.pg-head {
+  display: flex; align-items: center; gap: 8px; padding: 5px 6px; margin-left: -6px;
+  color: var(--muted-foreground); font-size: 14px; cursor: pointer; user-select: none;
+  border-radius: var(--radius-md); transition: background .15s ease, color .15s ease;
+}
+.pg-head:hover { background: var(--hover); color: var(--foreground); }
+.pg-icon { display: inline-flex; flex: 0 0 auto; color: var(--faint-foreground); }
+.pg-icon .icon { width: 16px; height: 16px; }
+.pg-phrase { flex: 1 1 auto; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.pg-chev { display: inline-flex; flex: 0 0 auto; color: var(--faint-foreground); transition: transform .15s ease; }
+.pg-chev .icon { width: 14px; height: 14px; }
+.pgroup.open > .pg-head .pg-chev, .pcall.open > .pcall-head .pg-chev { transform: rotate(90deg); }
+.pg-body { margin: 4px 0 0 4px; padding-left: 14px; border-left: 2px solid var(--border); }
+.pg-body[hidden] { display: none; }
+
+/* one tool call inside a group */
+.pcall + .pcall { margin-top: 2px; }
+.pcall-head { display: flex; align-items: center; gap: 8px; padding: 4px 6px; margin-left: -6px; border-radius: var(--radius-sm); cursor: pointer; }
+.pcall-head.leaf { cursor: default; }
+.pcall-head:not(.leaf):hover { background: var(--hover); }
+.pcall-head.err .evbadge { background: var(--destructive); }
+.pcall-summary { flex: 1 1 auto; min-width: 0; font-size: 13px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.pcall-summary.muted { color: var(--muted-foreground); font-style: italic; }
+.pcall-detail { padding: 2px 0 6px 0; }
+.pcall-detail[hidden] { display: none; }
+.pcall-detail .evdetail { margin: 0 0 6px 0; }
+.pcall-label { font-size: 11px; color: var(--faint-foreground); text-transform: uppercase; letter-spacing: .4px; margin: 4px 0 3px; }
+
+/* a standalone one-liner (background task lifecycle) */
+.pline { display: flex; align-items: center; gap: 8px; color: var(--muted-foreground); font-size: 14px; }
+.pline-text { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+
+/* transient status / non-event lines */
+.pnote { color: var(--faint-foreground); font-style: italic; font-size: 12px; }
+.pnote.mono { font-family: var(--font-mono); font-style: normal; white-space: pre-wrap; word-break: break-word; }
+
 /* ---------- empty / error / loading states ---------- */
 .state {
   text-align: center;
