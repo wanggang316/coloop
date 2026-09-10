@@ -61,6 +61,7 @@ const ICONS = {
   wrench: '<path d="M14.7 6.3a1 1 0 0 0 0 1.4l1.6 1.6a1 1 0 0 0 1.4 0l3.77-3.77a6 6 0 0 1-7.94 7.94l-6.91 6.91a2.12 2.12 0 0 1-3-3l6.91-6.91a6 6 0 0 1 7.94-7.94l-3.76 3.76z"/>',
   lightbulb: '<path d="M15 14c.2-1 .7-1.7 1.5-2.5 1-.9 1.5-2.2 1.5-3.5A6 6 0 0 0 6 8c0 1 .2 2.2 1.5 3.5.7.7 1.3 1.5 1.5 2.5"/><path d="M9 18h6"/><path d="M10 22h4"/>',
   'chevron-right': '<path d="m9 18 6-6-6-6"/>',
+  zap: '<path d="M4 14a1 1 0 0 1-.78-1.63l9.9-10.2a.5.5 0 0 1 .86.46l-1.92 6.02A1 1 0 0 0 13 10h7a1 1 0 0 1 .78 1.63l-9.9 10.2a.5.5 0 0 1-.86-.46l1.92-6.02A1 1 0 0 0 11 14z"/>',
 };
 
 // icon builds a 24x24 stroke SVG that inherits the current text color and size.
@@ -1120,7 +1121,17 @@ function createTranscript(sink) {
     }
     if (o.subtype === 'api_retry') { sink.row({ kind: 'note', tone: 'muted', color: 'gray', label: 'Retry', summary: 'API retry ' + (o.attempt || '?') + '/' + (o.max_retries || '?') + (o.error ? ' · ' + o.error : '') + (o.error_status ? ' (' + o.error_status + ')' : '') }); return; }
     if (o.subtype === 'compact_boundary') { sink.row({ kind: 'note', tone: 'muted', color: 'gray', label: 'Compact', summary: 'Context compacted' + (o.compact_metadata && o.compact_metadata.trigger ? ' (' + o.compact_metadata.trigger + ')' : '') }); return; }
-    // hook_started / hook_response / thinking_tokens / … → noise, skip.
+    // Hook lifecycle, paired by hook_id: started → (progress)* → response.
+    if (o.subtype === 'hook_started') { sink.row({ kind: 'hook', tone: 'solid', color: 'gray', label: 'Hook', summary: o.hook_name || o.hook_event || '', hookId: o.hook_id }); return; }
+    if (o.subtype === 'hook_progress') { sink.row({ kind: 'hook', tone: 'muted', color: 'gray', label: 'Hook', summary: (o.hook_name || '') + ' · output', detail: o.output || '', hookId: o.hook_id, progress: true }); return; }
+    if (o.subtype === 'hook_response') {
+      const failed = o.outcome ? o.outcome !== 'success' : (o.exit_code != null && o.exit_code !== 0);
+      const status = o.outcome || (o.exit_code != null ? 'exit ' + o.exit_code : 'done');
+      const out = [o.output, o.stdout, o.stderr].filter((x) => x && String(x).trim()).join('\n');
+      sink.row({ kind: 'hook', tone: 'muted', color: 'gray', label: 'Hook', summary: (o.hook_name || '') + ' · ' + status, detail: out, error: failed, hookId: o.hook_id, status });
+      return;
+    }
+    // thinking_tokens / plugin_install / … → noise, skip.
   }
 
   function res(o) {
@@ -1234,6 +1245,7 @@ const CATEGORY_META = {
   edit:   { icon: 'pencil',    one: 'edited a file',     many: 'edited files' },
   web:    { icon: 'globe',     one: 'searched the web',  many: 'searched the web' },
   agent:  { icon: 'sparkles',  one: 'launched an agent', many: 'launched {n} agents' },
+  hook:   { icon: 'zap',       one: 'ran a hook',        many: 'ran {n} hooks' },
 };
 
 // toolCategory maps a tool name to a category key; unknown tools (Skill,
@@ -1376,7 +1388,8 @@ function renderLog(root, name, id) {
   // to their call by tool_use_id, so they land inside the right group even
   // when they arrive after it was closed.
   let curGroup = null;            // { node, body, phrase, iconSlot, counts:Map }
-  const callsById = new Map();    // tool_use_id -> { detail, out }
+  const callsById = new Map();    // tool_use_id -> { detail, head }
+  const hooksById = new Map();    // hook_id -> { head, detail, node }
 
   function closeGroup() { curGroup = null; }
 
@@ -1396,9 +1409,8 @@ function renderLog(root, name, id) {
     return curGroup;
   }
 
-  // countCall updates the group's phrase and icon after a tool call joins it.
-  function countCall(g, name) {
-    const cat = toolCategory(name);
+  // countCat updates the group's phrase and icon after an activity joins it.
+  function countCat(g, cat) {
     g.counts.set(cat, (g.counts.get(cat) || 0) + 1);
     g.phrase.textContent = activityPhrase(g.counts);
     const first = g.counts.keys().next().value;
@@ -1422,7 +1434,7 @@ function renderLog(root, name, id) {
     });
     g.body.append(node);
     if (desc.toolUseId) callsById.set(desc.toolUseId, { detail, head });
-    countCall(g, desc.label);
+    countCat(g, toolCategory(desc.label));
   }
 
   function prettyResult(desc) {
@@ -1457,6 +1469,44 @@ function renderLog(root, name, id) {
     });
     g.body.append(node);
     return g.node;
+  }
+
+  // prettyHook shows a hook as a group entry tagged with its lifecycle
+  // (running → success / failed); response output, when any, becomes the
+  // expandable detail. Paired by hook_id, like background tasks by tool_use_id.
+  function prettyHook(desc) {
+    let h = desc.hookId && hooksById.get(desc.hookId);
+    if (!h) {
+      const g = ensureGroup();
+      const detail = el('div', { class: 'pcall-detail', hidden: true });
+      const head = el('div', { class: 'pcall-head leaf' },
+        el('span', { class: 'pg-chev' }, icon('chevron-right')),
+        el('span', { class: 'evbadge muted gray' }, 'Hook'),
+        el('span', { class: 'pcall-summary muted' }, desc.summary.replace(/ · .*$/, '')),
+        el('span', { class: 'ptag' }, 'running'));
+      const node = el('div', { class: 'pcall' }, head, detail);
+      head.addEventListener('click', () => {
+        if (head.classList.contains('leaf')) return;
+        detail.hidden = !detail.hidden;
+        node.classList.toggle('open', !detail.hidden);
+      });
+      g.body.append(node);
+      h = { head, detail, node };
+      if (desc.hookId) hooksById.set(desc.hookId, h);
+      countCat(g, 'hook');
+    }
+    if (desc.detail) {
+      h.detail.append(el('div', { class: 'pcall-label' }, desc.error ? 'error' : 'output'), el('pre', { class: 'evdetail' + (desc.error ? ' error' : '') }, desc.detail));
+      h.head.classList.remove('leaf');
+    }
+    if (desc.tone === 'muted' && !desc.progress) {
+      const tag = h.head.querySelector('.ptag');
+      tag.textContent = desc.status || 'done';
+      tag.classList.toggle('ok', !desc.error);
+      tag.classList.toggle('err', !!desc.error);
+      if (desc.error) h.head.classList.add('err');
+    }
+    return h.node.closest('.pgroup');
   }
 
   function prettyThinking(desc) {
@@ -1506,6 +1556,7 @@ function renderLog(root, name, id) {
         return node;
       }
       case 'task': return prettyTask(desc);
+      case 'hook': return prettyHook(desc);
       case 'note': {
         closeGroup();
         const node = el('div', { class: 'pnote' }, desc.summary || desc.label);
@@ -1616,6 +1667,7 @@ function renderLog(root, name, id) {
     stats.toolCalls = 0;
     curGroup = null;
     callsById.clear();
+    hooksById.clear();
   }
 
   function rebuild() {
