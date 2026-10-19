@@ -15,6 +15,12 @@ type Result struct {
 	Status   model.RunStatus
 }
 
+// Invocation combines a task with the machine-local source used for secret references.
+type Invocation struct {
+	Task        model.Task
+	SecretsFile string
+}
+
 // Executor runs one task execution, streaming combined stdout/stderr to w.
 //
 // It returns the terminal Result (success/failed/timeout with an exit code).
@@ -22,5 +28,5 @@ type Result struct {
 // task (e.g. bad working dir); a non-zero process exit is NOT an error and is
 // reported through Result instead.
 type Executor interface {
-	Run(ctx context.Context, task model.Task, w io.Writer) (Result, error)
+	Run(ctx context.Context, inv Invocation, w io.Writer) (Result, error)
 }

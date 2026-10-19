@@ -33,7 +33,7 @@ type blockingExec struct {
 	exit    int
 }
 
-func (b *blockingExec) Run(ctx context.Context, task model.Task, w io.Writer) (executor.Result, error) {
+func (b *blockingExec) Run(ctx context.Context, inv executor.Invocation, w io.Writer) (executor.Result, error) {
 	for _, l := range b.lines {
 		io.WriteString(w, l+"\n")
 	}

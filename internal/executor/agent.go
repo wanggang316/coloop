@@ -7,8 +7,6 @@ import (
 	"os/exec"
 	"strings"
 	"text/template"
-
-	"github.com/wanggang316/coloop/internal/model"
 )
 
 // AgentExecutor renders a task's CmdTmpl into a shell command and runs it.
@@ -38,7 +36,8 @@ func NewAgent(shell string) *AgentExecutor {
 }
 
 // Run renders task.CmdTmpl and executes it via `shell -c`.
-func (e *AgentExecutor) Run(ctx context.Context, task model.Task, w io.Writer) (Result, error) {
+func (e *AgentExecutor) Run(ctx context.Context, inv Invocation, w io.Writer) (Result, error) {
+	task := inv.Task
 	if task.CmdTmpl == "" {
 		return Result{}, fmt.Errorf("agent task %q: empty cmd_tmpl", task.Name)
 	}
@@ -53,7 +52,7 @@ func (e *AgentExecutor) Run(ctx context.Context, task model.Task, w io.Writer) (
 		Prompt:     task.Prompt,
 		TaskName:   task.Name,
 		WorkingDir: task.WorkingDir,
-		Env:        task.Env,
+		Env:        task.Env.Literals(),
 	}
 	if err := tmpl.Execute(&sb, data); err != nil {
 		return Result{}, fmt.Errorf("agent task %q: render cmd_tmpl: %w", task.Name, err)
@@ -64,5 +63,5 @@ func (e *AgentExecutor) Run(ctx context.Context, task model.Task, w io.Writer) (
 		"PROMPT=" + task.Prompt,
 		"TASK_NAME=" + task.Name,
 	}
-	return runCmd(ctx, cmd, task, w, extraEnv...)
+	return runCmd(ctx, cmd, inv, w, extraEnv...)
 }

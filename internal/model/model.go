@@ -117,19 +117,19 @@ func (d *Duration) UnmarshalJSON(b []byte) error {
 
 // Task is a task definition, declared in config.yaml.
 type Task struct {
-	Name       string            `yaml:"name" json:"name"`
-	Type       TaskType          `yaml:"type" json:"type"`
-	Cron       string            `yaml:"cron" json:"cron"`               // empty => manual only
-	WorkingDir string            `yaml:"working_dir" json:"working_dir"` // cwd for the command
-	Command    string            `yaml:"command" json:"command"`         // shell: script / command
-	Prompt     string            `yaml:"prompt" json:"prompt"`           // agent: prompt text
-	CmdTmpl    string            `yaml:"cmd_tmpl" json:"cmd_tmpl"`       // agent: inline command template (legacy; prefer Runner)
-	Runner     string            `yaml:"runner" json:"runner"`           // agent: name of a shared runner (see Config.Runners)
-	Env        map[string]string `yaml:"env" json:"env"`                 // extra environment variables
-	Timeout    Duration          `yaml:"timeout" json:"timeout"`
-	Alert      AlertPolicy       `yaml:"alert" json:"alert"`
-	Notifiers  []string          `yaml:"notifiers" json:"notifiers"` // names of notifier channels to alert (empty => none)
-	Enabled    *bool             `yaml:"enabled" json:"enabled"`     // nil => enabled
+	Name       string      `yaml:"name" json:"name"`
+	Type       TaskType    `yaml:"type" json:"type"`
+	Cron       string      `yaml:"cron" json:"cron"`               // empty => manual only
+	WorkingDir string      `yaml:"working_dir" json:"working_dir"` // cwd for the command
+	Command    string      `yaml:"command" json:"command"`         // shell: script / command
+	Prompt     string      `yaml:"prompt" json:"prompt"`           // agent: prompt text
+	CmdTmpl    string      `yaml:"cmd_tmpl" json:"cmd_tmpl"`       // agent: inline command template (legacy; prefer Runner)
+	Runner     string      `yaml:"runner" json:"runner"`           // agent: name of a shared runner (see Config.Runners)
+	Env        Env         `yaml:"env" json:"env"`                 // extra environment variables
+	Timeout    Duration    `yaml:"timeout" json:"timeout"`
+	Alert      AlertPolicy `yaml:"alert" json:"alert"`
+	Notifiers  []string    `yaml:"notifiers" json:"notifiers"` // names of notifier channels to alert (empty => none)
+	Enabled    *bool       `yaml:"enabled" json:"enabled"`     // nil => enabled
 }
 
 // IsEnabled defaults to true when unset.
@@ -173,6 +173,7 @@ type Event struct {
 
 // Config is the top-level configuration loaded from config.yaml.
 type Config struct {
+	Secrets SecretSource  `yaml:"secrets,omitempty"`
 	Listen  string        `yaml:"listen"`   // HTTP listen address, e.g. ":8765"
 	Shell   string        `yaml:"shell"`    // default shell for shell tasks
 	DataDir string        `yaml:"data_dir"` // base dir for runs/ (default: dir of config)

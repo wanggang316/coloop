@@ -30,7 +30,7 @@ func newSteppedExec(total int, status model.RunStatus) *steppedExec {
 	}
 }
 
-func (s *steppedExec) Run(ctx context.Context, task model.Task, w io.Writer) (executor.Result, error) {
+func (s *steppedExec) Run(ctx context.Context, inv executor.Invocation, w io.Writer) (executor.Result, error) {
 	for i := 0; i < s.total; i++ {
 		select {
 		case <-s.step:

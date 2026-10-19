@@ -2,6 +2,7 @@ package executor
 
 import (
 	"context"
+	"fmt"
 	"io"
 	"os"
 	"os/exec"
@@ -29,13 +30,24 @@ const waitDelay = 5 * time.Second
 // On a context deadline the whole process group is killed so child processes
 // die with the parent. A non-nil error signals an internal failure to start or
 // wait on the process; a non-zero exit is reported through Result instead.
-func runCmd(ctx context.Context, cmd *exec.Cmd, task model.Task, w io.Writer, extraEnv ...string) (Result, error) {
+func runCmd(ctx context.Context, cmd *exec.Cmd, inv Invocation, w io.Writer, extraEnv ...string) (Result, error) {
+	task := inv.Task
+	values, sensitive, err := resolveEnv(task.Env, inv.SecretsFile)
+	if err != nil {
+		fmt.Fprintf(w, "coloop: %v\n", err)
+		return Result{}, err
+	}
+	if len(sensitive) > 0 {
+		masked := newSecretWriter(w, sensitive)
+		defer masked.Flush()
+		w = masked
+	}
 	if task.WorkingDir != "" {
 		cmd.Dir = task.WorkingDir
 	}
 	cmd.Stdout = w
 	cmd.Stderr = w
-	cmd.Env = buildEnv(task.Env, extraEnv)
+	cmd.Env = buildEnv(values, extraEnv)
 
 	// Place the child in its own process group so we can signal the whole tree.
 	cmd.SysProcAttr = &syscall.SysProcAttr{Setpgid: true}

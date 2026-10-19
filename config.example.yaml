@@ -1,3 +1,8 @@
+# Optional machine-local dotenv source. Only task env secret references use it.
+# secrets:
+#   file: ~/.config/secrets.env
+# A task can use: env: {API_TOKEN: {secret: SERVICE_TOKEN}}
+
 # coloop configuration — copy to ~/.coloop/config.yaml and edit.
 
 # HTTP listen address for the Web UI + JSON API.

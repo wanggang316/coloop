@@ -46,7 +46,7 @@ func TestAddPostsTask(t *testing.T) {
 	want := model.Task{
 		Name: "backup", Type: model.TaskShell,
 		Cron: "0 3 * * *", Command: "./b.sh",
-		Env:       map[string]string{"ENV": "prod", "TZ": "UTC"},
+		Env:       model.Env{"ENV": {Value: "prod"}, "TZ": {Value: "UTC"}},
 		Timeout:   model.Duration(30 * 60 * 1e9),
 		Alert:     model.AlertAlways,
 		Notifiers: []string{"tg", "feishu"},
@@ -169,5 +169,27 @@ func TestTakeName(t *testing.T) {
 	}
 	if n, _ := takeName(nil); n != "" {
 		t.Errorf("takeName(nil) = %q", n)
+	}
+}
+
+func TestSecretEnvFlagAndEditPreservation(t *testing.T) {
+	current := model.Task{Name: "probe", Type: model.TaskShell, Command: "true", Env: model.Env{"OLD": {Secret: "OLD_KEY"}}}
+	var put model.Task
+	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Method == http.MethodGet {
+			json.NewEncoder(w).Encode(model.TaskDetail{Task: current})
+			return
+		}
+		if err := json.NewDecoder(r.Body).Decode(&put); err != nil {
+			t.Error(err)
+		}
+		json.NewEncoder(w).Encode(put)
+	}))
+	defer ts.Close()
+	if code := Dispatch("edit", []string{"probe", "--addr", ts.URL, "--env-secret", "TOKEN=API_TOKEN", "--env", "MODE=prod"}, ""); code != 0 {
+		t.Fatalf("exit %d", code)
+	}
+	if put.Env["OLD"].Secret != "OLD_KEY" || put.Env["TOKEN"].Secret != "API_TOKEN" || put.Env["MODE"].Value != "prod" {
+		t.Fatalf("lost env values: %+v", put.Env)
 	}
 }
