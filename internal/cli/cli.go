@@ -84,6 +84,7 @@ task flags (add / edit):
   --prompt <s>        agent task: prompt text
   --cmd-tmpl <s>      agent task: inline command template (prefer --runner)
   --env KEY=VAL       environment variable (repeatable)
+  --env-secret KEY=NAME  reference a key in secrets.file (repeatable)
   --timeout <dur>     e.g. 30s / 10m / 1h
   --alert <policy>    on_failure | on_success | always | never
   --notifiers a,b     comma-separated notifier channel names
@@ -327,6 +328,7 @@ type taskFlags struct {
 	notifiers  *string
 	enabled    *bool
 	env        *kvFlag
+	envSecret  *kvFlag
 }
 
 func registerTaskFlags(fs *flag.FlagSet) *taskFlags {
@@ -344,8 +346,10 @@ func registerTaskFlags(fs *flag.FlagSet) *taskFlags {
 		notifiers:  fs.String("notifiers", "", "comma-separated notifier channel names"),
 		enabled:    fs.Bool("enabled", true, "whether the task is scheduled"),
 		env:        &kvFlag{},
+		envSecret:  &kvFlag{},
 	}
 	fs.Var(v.env, "env", "environment variable KEY=VALUE (repeatable)")
+	fs.Var(v.envSecret, "env-secret", "secret reference KEY=NAME (repeatable)")
 	return v
 }
 
@@ -394,12 +398,30 @@ func (v *taskFlags) apply(set map[string]bool, t *model.Task) error {
 		b := *v.enabled
 		t.Enabled = &b
 	}
+	if set["env-secret"] {
+		if t.Env == nil {
+			t.Env = model.Env{}
+		}
+		for key, name := range v.envSecret.m {
+			if _, duplicate := v.env.m[key]; duplicate {
+				return fmt.Errorf("env %q is set by both --env and --env-secret", key)
+			}
+			value := model.EnvValue{Secret: name}
+			if name == "" {
+				return fmt.Errorf("--env-secret requires a non-empty secret key")
+			}
+			if err := value.Validate(); err != nil {
+				return err
+			}
+			t.Env[key] = value
+		}
+	}
 	if set["env"] {
 		if t.Env == nil {
-			t.Env = map[string]string{}
+			t.Env = model.Env{}
 		}
 		for k, val := range v.env.m {
-			t.Env[k] = val
+			t.Env[k] = model.EnvValue{Value: val}
 		}
 	}
 	return nil
@@ -594,7 +616,7 @@ func printTask(d model.TaskDetail) {
 }
 
 // envPairs renders an env map as sorted KEY=VALUE tokens for stable output.
-func envPairs(env map[string]string) []string {
+func envPairs(env model.Env) []string {
 	keys := make([]string, 0, len(env))
 	for k := range env {
 		keys = append(keys, k)
@@ -602,7 +624,11 @@ func envPairs(env map[string]string) []string {
 	sort.Strings(keys)
 	pairs := make([]string, len(keys))
 	for i, k := range keys {
-		pairs[i] = k + "=" + env[k]
+		if env[k].Secret != "" {
+			pairs[i] = k + "={secret: " + env[k].Secret + "}"
+		} else {
+			pairs[i] = k + "=" + env[k].Value
+		}
 	}
 	return pairs
 }

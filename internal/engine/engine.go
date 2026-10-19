@@ -257,7 +257,10 @@ func (e *Engine) runOnce(task model.Task, run model.Run, b *broadcaster) (model.
 		task.CmdTmpl = e.runnerCmdTmpl(task.Runner)
 	}
 	exec := e.executorFor(task)
-	res, runErr := exec.Run(ctx, task, w)
+	e.cfgMu.RLock()
+	secretsFile := e.cfg.Secrets.File
+	e.cfgMu.RUnlock()
+	res, runErr := exec.Run(ctx, executor.Invocation{Task: task, SecretsFile: secretsFile}, w)
 	live.flush() // emit any trailing partial line before terminating the stream
 
 	if runErr != nil {

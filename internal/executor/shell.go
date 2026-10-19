@@ -4,8 +4,6 @@ import (
 	"context"
 	"io"
 	"os/exec"
-
-	"github.com/wanggang316/coloop/internal/model"
 )
 
 // defaultShell is used when no shell is configured.
@@ -25,7 +23,8 @@ func NewShell(shell string) *ShellExecutor {
 }
 
 // Run executes task.Command via `shell -c`.
-func (e *ShellExecutor) Run(ctx context.Context, task model.Task, w io.Writer) (Result, error) {
+func (e *ShellExecutor) Run(ctx context.Context, inv Invocation, w io.Writer) (Result, error) {
+	task := inv.Task
 	cmd := exec.CommandContext(ctx, e.shell, "-c", task.Command)
-	return runCmd(ctx, cmd, task, w)
+	return runCmd(ctx, cmd, inv, w)
 }

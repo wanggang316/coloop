@@ -68,6 +68,15 @@ func applyDefaults(cfg *model.Config, path string) {
 		}
 	}
 	cfg.DataDir = expandHome(cfg.DataDir)
+	if cfg.Secrets.File != "" {
+		cfg.Secrets.File = expandHome(cfg.Secrets.File)
+		if !filepath.IsAbs(cfg.Secrets.File) {
+			abs, err := filepath.Abs(filepath.Join(filepath.Dir(path), cfg.Secrets.File))
+			if err == nil {
+				cfg.Secrets.File = abs
+			}
+		}
+	}
 
 	for i := range cfg.Tasks {
 		t := &cfg.Tasks[i]
@@ -208,6 +217,17 @@ func Validate(cfg *model.Config) error {
 			seen[t.Name] = struct{}{}
 		}
 
+		for key, value := range t.Env {
+			if key == "" || strings.ContainsAny(key, "=\x00") {
+				errs = append(errs, fmt.Errorf("task %q: invalid env name", label))
+			}
+			if err := value.Validate(); err != nil {
+				errs = append(errs, fmt.Errorf("task %q env %q: %w", label, key, err))
+			}
+			if value.Secret != "" && cfg.Secrets.File == "" {
+				errs = append(errs, fmt.Errorf("task %q env %q: secrets.file is required", label, key))
+			}
+		}
 		switch t.Type {
 		case model.TaskShell:
 			if t.Command == "" {

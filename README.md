@@ -101,6 +101,57 @@ Key fields (see `config.example.yaml` for the full annotated reference):
 The daemon **hot-reloads** the config on file change; an invalid edit is
 rejected and the running config is kept.
 
+### Secret references
+
+Keep machine credentials in a separate dotenv file. Configure its path once,
+then reference only the keys each task needs:
+
+```yaml
+secrets:
+  file: ~/.config/secrets.env
+
+tasks:
+  - name: agent-workflow
+    type: shell
+    command: agent-workflow dispatch
+    env:
+      NODE_ENV: production
+      CLAUDE_CODE_OAUTH_TOKEN:
+        secret: CLAUDE_CODE_OAUTH_TOKEN
+```
+
+`env` still accepts literal strings. An object must contain exactly one
+non-empty `secret` key. The UI lets you choose **Value** or **Secret** for each
+variable. The CLI uses `--env KEY=VALUE` or `--env-secret KEY=SECRET_KEY`:
+
+```sh
+coloop edit agent-workflow --env-secret CLAUDE_CODE_OAUTH_TOKEN=CLAUDE_CODE_OAUTH_TOKEN
+```
+
+- `secrets.file` is a host setting configured in YAML. `~/` expands to the
+  daemon user's home; relative paths resolve against the config directory.
+- The file is read at the start of each task run that uses a reference. It
+  supports dotenv syntax, including `export KEY=value` and quoted values;
+  it is parsed as data, never executed as a shell script.
+- Only referenced keys are added to that task's environment. Existing daemon
+  environment inheritance remains unchanged. Task values override inherited
+  variables; executor metadata such as `PROMPT` wins last.
+- Missing files, invalid syntax, and missing or empty referenced keys fail the
+  run before the command starts. Tasks with no references do not read the file.
+- Rotation takes effect on the next run, without a daemon restart. Already
+  running processes retain their existing environment.
+- API responses, config saves and `coloop show` retain references, never resolved
+  credentials. Agent templates expose only literal entries in `{{.Env}}`; read
+  credentials through environment variables in the child process instead.
+- Exact referenced values are masked as `[REDACTED]` in captured stdout/stderr,
+  including across output chunks, before log storage, streaming and alerts.
+  Encoded or transformed values and files written by the command are not masked.
+
+Protect the file with local permissions (for example `chmod 600`). References
+are not encryption or an authorization boundary: a task runs as the daemon user,
+so anyone who can create arbitrary tasks can run commands with that user's access.
+Keep the unauthenticated API on a trusted interface.
+
 ## Run
 
 ```sh
@@ -127,7 +178,7 @@ coloop [--config PATH] <command>
 
 `add` / `edit` take the task fields as flags — `--name --type --cron
 --working-dir --command --runner --prompt --cmd-tmpl --env KEY=VAL (repeatable)
---timeout --alert --notifiers a,b --enabled`. `edit` applies only the flags you
+--env-secret KEY=NAME --timeout --alert --notifiers a,b --enabled`. `edit` applies only the flags you
 pass, leaving the rest as-is. Examples:
 
 ```sh

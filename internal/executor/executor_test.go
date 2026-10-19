@@ -51,7 +51,7 @@ func TestShellExecutor(t *testing.T) {
 			}
 
 			var buf bytes.Buffer
-			res, err := exec.Run(context.Background(), task, &buf)
+			res, err := exec.Run(context.Background(), Invocation{Task: task}, &buf)
 			if err != nil {
 				t.Fatalf("Run returned internal error: %v", err)
 			}
@@ -87,7 +87,7 @@ func TestShellExecutorTimeout(t *testing.T) {
 	start := time.Now()
 
 	var buf bytes.Buffer
-	res, err := exec.Run(ctx, task, &buf)
+	res, err := exec.Run(ctx, Invocation{Task: task}, &buf)
 	elapsed := time.Since(start)
 
 	if err != nil {
@@ -127,7 +127,7 @@ func TestShellExecutorTimeoutIgnoresSIGTERM(t *testing.T) {
 
 	start := time.Now()
 	var buf bytes.Buffer
-	res, err := NewShell("").Run(ctx, task, &buf)
+	res, err := NewShell("").Run(ctx, Invocation{Task: task}, &buf)
 	elapsed := time.Since(start)
 
 	if err != nil {
@@ -168,7 +168,7 @@ func TestShellExecutorFastCommandNotTimeout(t *testing.T) {
 	for i := 0; i < 50; i++ {
 		ctx, cancel := context.WithTimeout(context.Background(), task.Timeout.Std())
 		var buf bytes.Buffer
-		res, err := exec.Run(ctx, task, &buf)
+		res, err := exec.Run(ctx, Invocation{Task: task}, &buf)
 		cancel()
 
 		if err != nil {
@@ -200,7 +200,7 @@ func TestAgentExecutor(t *testing.T) {
 		}
 
 		var buf bytes.Buffer
-		res, err := exec.Run(context.Background(), task, &buf)
+		res, err := exec.Run(context.Background(), Invocation{Task: task}, &buf)
 		if err != nil {
 			t.Fatalf("Run returned internal error: %v", err)
 		}
@@ -228,7 +228,7 @@ func TestAgentExecutor(t *testing.T) {
 		}
 
 		var buf bytes.Buffer
-		res, err := exec.Run(context.Background(), task, &buf)
+		res, err := exec.Run(context.Background(), Invocation{Task: task}, &buf)
 		if err != nil {
 			t.Fatalf("Run returned internal error: %v", err)
 		}
@@ -248,7 +248,7 @@ func TestAgentExecutor(t *testing.T) {
 		}
 
 		var buf bytes.Buffer
-		if _, err := exec.Run(context.Background(), task, &buf); err == nil {
+		if _, err := exec.Run(context.Background(), Invocation{Task: task}, &buf); err == nil {
 			t.Fatal("expected an error for empty cmd_tmpl, got nil")
 		}
 	})

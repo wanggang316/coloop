@@ -273,15 +273,49 @@ function formToTask(f) {
   }
   const to = f.timeout.value.trim();
   if (to) t.timeout = to;
-  const env = {};
-  for (const line of f.env.value.split('\n')) {
-    const s = line.trim();
-    if (!s) continue;
-    const eq = s.indexOf('=');
-    if (eq > 0) env[s.slice(0, eq).trim()] = s.slice(eq + 1);
-  }
-  if (Object.keys(env).length) t.env = env;
+  t.env = f.env.read();
   return t;
+}
+
+// Keep each env value's source explicit; a secret key is never a literal value.
+function environmentEditor(initial) {
+  const rows = [];
+  const list = el('div', { class: 'env-list' });
+  function add(key = '', value = '') {
+    const secret = typeof value !== 'string';
+    const name = el('input', { type: 'text', value: key, placeholder: 'NAME', 'aria-label': 'Variable name', spellcheck: 'false' });
+    const source = el('select', { 'aria-label': 'Value source' },
+      el('option', { value: 'value', selected: !secret }, 'Value'),
+      el('option', { value: 'secret', selected: secret }, 'Secret'));
+    const input = el('input', { type: 'text', value: secret ? value.secret : value, 'aria-label': 'Variable value', spellcheck: 'false', autocomplete: 'off' });
+    function hint() { input.placeholder = source.value === 'secret' ? 'SECRET_KEY' : 'value'; }
+    source.addEventListener('change', hint);
+    hint();
+    const row = { name, source, input };
+    const node = el('div', { class: 'env-row' }, name, source, input,
+      el('button', { type: 'button', class: 'btn', 'aria-label': 'Remove variable', onclick: () => {
+        rows.splice(rows.indexOf(row), 1); node.remove();
+      } }, 'Remove'));
+    rows.push(row);
+    list.appendChild(node);
+  }
+  for (const [name, value] of Object.entries(initial)) add(name, value);
+  const node = el('div', { class: 'env-editor' }, list,
+    el('button', { type: 'button', class: 'btn', onclick: () => add() }, 'Add variable'));
+  return { node, read() {
+    const env = Object.create(null);
+    for (const row of rows) {
+      const name = row.name.value.trim();
+      if (!name) throw new Error('Each environment variable needs a name.');
+      if (Object.hasOwn(env, name)) throw new Error(`Duplicate environment variable: ${name}`);
+      if (row.source.value === 'secret') {
+        const key = row.input.value.trim();
+        if (!/^[A-Za-z_][A-Za-z0-9_]*$/.test(key)) throw new Error(`Invalid secret key for ${name}`);
+        env[name] = { secret: key };
+      } else env[name] = row.input.value;
+    }
+    return env;
+  } };
 }
 
 // openTaskForm shows the create form (existing omitted) or an edit form.
@@ -325,8 +359,7 @@ async function openTaskForm(existing, onSaved) {
     ...['on_failure', 'on_success', 'always', 'never'].map(
       (a) => el('option', { value: a, selected: (t.alert || 'on_failure') === a }, a)));
   f.enabled = el('input', { type: 'checkbox', checked: t.enabled !== false });
-  f.env = el('textarea', { rows: '2', placeholder: 'ENV=prod', spellcheck: 'false' },
-    t.env ? Object.entries(t.env).map(([k, v]) => `${k}=${v}`).join('\n') : '');
+  f.env = environmentEditor(t.env || {});
 
   // Notifier channels: a checkbox per channel; no selection means no alerts.
   const selected = new Set(t.notifiers || []);
@@ -361,7 +394,9 @@ async function openTaskForm(existing, onSaved) {
 
   async function onSubmit(ev) {
     ev.preventDefault();
-    const task = formToTask(f);
+    let task;
+    try { task = formToTask(f); }
+    catch (e) { err.textContent = e.message; err.hidden = false; return; }
     if (!task.name) { err.textContent = 'name is required'; err.hidden = false; return; }
     save.disabled = true;
     err.hidden = true;
@@ -386,7 +421,7 @@ async function openTaskForm(existing, onSaved) {
       shellRow, promptRow, tmplRow,
       el('div', { class: 'field-row' }, field('timeout', f.timeout), field('alert', f.alert)),
       field('notify channels', notifiersNode, 'alert policy decides whether; these decide where'),
-      field('env (KEY=VALUE per line)', f.env),
+      field('environment', f.env.node, 'Secret uses a key from this host’s configured secrets file.'),
       el('label', { class: 'field-check' }, f.enabled, el('span', null, 'enabled')),
       err,
       el('div', { class: 'form-actions' },
@@ -896,7 +931,7 @@ function renderDetail(root, name) {
     kv('alert', t.alert || 'on_failure');
     kv('notify channels', t.notifiers && t.notifiers.length ? t.notifiers.join(', ') : 'none');
     const env = t.env && Object.keys(t.env).length
-      ? Object.entries(t.env).map(([k, v]) => `${k}=${v}`).join('\n') : '';
+      ? Object.entries(t.env).map(([k, v]) => `${k}=${typeof v === 'string' ? v : `secret: ${v.secret}`}`).join('\n') : '';
     kv('env', env);
     return el('div', { class: 'card' },
       el('h2', null, 'Configuration'),

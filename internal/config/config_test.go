@@ -1,6 +1,7 @@
 package config
 
 import (
+	"encoding/json"
 	"os"
 	"path/filepath"
 	"strings"
@@ -557,5 +558,47 @@ tasks:
 `)
 	if _, err := Load(path); err == nil {
 		t.Fatal("Load: expected validation error for duplicate names, got nil")
+	}
+}
+
+// Config round-trips keep secret references, not credential values.
+func TestLoadSecretEnvironment(t *testing.T) {
+	path := writeConfig(t, `
+secrets:
+  file: secrets.env
+tasks:
+  - name: private
+    type: shell
+    command: echo ready
+    env:
+      MODE: production
+      TOKEN:
+        secret: SERVICE_TOKEN
+`)
+	cfg, err := Load(path)
+	if err != nil {
+		t.Fatalf("Load secret reference: %v", err)
+	}
+	data, err := json.Marshal(cfg.Tasks[0])
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(string(data), `"TOKEN":{"secret":"SERVICE_TOKEN"}`) || !strings.Contains(string(data), `"MODE":"production"`) {
+		t.Fatalf("task API representation lost env values: %s", data)
+	}
+}
+
+func TestRejectInvalidSecretEnvironment(t *testing.T) {
+	for _, value := range []string{`{secret: ""}`, `{secret: KEY, value: plain}`, `{secret: 42}`, `{secret: "BAD KEY"}`, `[]`, `false`} {
+		t.Run(value, func(t *testing.T) {
+			path := writeConfig(t, "secrets:\n  file: secrets.env\ntasks:\n  - name: probe\n    type: shell\n    command: true\n    env:\n      TOKEN: "+value+"\n")
+			if _, err := Load(path); err == nil {
+				t.Fatal("accepted invalid env value")
+			}
+		})
+	}
+	path := writeConfig(t, "tasks:\n  - name: probe\n    type: shell\n    command: true\n    env:\n      TOKEN: {secret: KEY}\n")
+	if _, err := Load(path); err == nil || !strings.Contains(err.Error(), "secrets.file") {
+		t.Fatalf("missing source: %v", err)
 	}
 }
